@@ -1,5 +1,6 @@
 # DLLHound - DLL Sideloading Scanner
-# This script scans running processes and their loaded DLLs to identify potential DLL sideloading opportunities.
+# Author: @ajm4n
+# Description: Scans processes for potential DLL sideloading vulnerabilities
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
@@ -15,14 +16,17 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 # Configuration
-$VERY_SMALL_EXECUTABLE_SIZE = 50MB  # Maximum size for strict targeted scan
-$SMALL_EXECUTABLE_SIZE = 100MB      # Maximum size for medium targeted scan
-$STRICT_MAX_DLL_DEPENDENCIES = 10   # Maximum DLL dependencies for strict targeted scan
-$MAX_DLL_DEPENDENCIES = 50          # Maximum DLL dependencies for medium targeted scan
-
+$VERY_SMALL_EXECUTABLE_SIZE = 50MB
+$SMALL_EXECUTABLE_SIZE = 100MB
+$STRICT_MAX_DLL_DEPENDENCIES = 10
+$MAX_DLL_DEPENDENCIES = 50
 $COMMON_SYSTEM_DLLS = @(
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
     'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
+)
+$STANDARD_WINDOWS_PROCESSES = @(
+    'explorer.exe', 'svchost.exe', 'lsass.exe', 'csrss.exe', 'wininit.exe',
+    'services.exe', 'winlogon.exe', 'taskhostw.exe', 'spoolsv.exe', 'dwm.exe'
 )
 
 # Function to extract imported DLLs from a PE file
@@ -126,7 +130,7 @@ function Start-DLLSideloadingScan {
     }
 
     $results = @()
-    $processes = Get-Process | Where-Object { $_.MainModule }
+    $processes = Get-Process | Where-Object { $_.MainModule -and $STANDARD_WINDOWS_PROCESSES -notcontains $_.ProcessName }
     foreach ($process in $processes) {
         Write-Host "[INFO] Processing: $($process.ProcessName) (PID: $($process.Id))" -ForegroundColor Cyan
         if ($ScanType -ne "Full" -and -not (Test-IsLikelyTarget -Process $process -StrictMode:($ScanType -eq "Strict") -CustomMode:($ScanType -eq "Custom") -CustomSize $CustomSize -CustomDLLs $CustomDLLs)) {
@@ -137,14 +141,10 @@ function Start-DLLSideloadingScan {
             $processPath = $process.MainModule.FileName
             Write-Host "[INFO] Analyzing process at $processPath..." -ForegroundColor Cyan
             $importedDLLs = Get-ImportedDLLs -FilePath $processPath
-            Write-Host "[INFO] Imported DLLs: $($importedDLLs -join ', ')" -ForegroundColor DarkGray
             $loadedDLLs = $process.Modules | Where-Object {
                 $_.ModuleName.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)
             } | Select-Object -ExpandProperty ModuleName
-            Write-Host "[INFO] Loaded DLLs: $($loadedDLLs -join ', ')" -ForegroundColor DarkGray
 
-            # Log any DLLs that failed to load or are missing
-            Write-Host "[INFO] Comparing imported DLLs against loaded DLLs..." -ForegroundColor Cyan
             $missingDLLs = $importedDLLs | Where-Object { $loadedDLLs -notcontains $_ }
             foreach ($dllName in $missingDLLs) {
                 if ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower()) {
@@ -157,23 +157,6 @@ function Start-DLLSideloadingScan {
                     ProcessId = $process.Id
                     ProcessPath = $processPath
                     MissingDLL = $dllName
-                }
-            }
-
-            # Check if loaded DLLs have missing paths
-            foreach ($module in $process.Modules) {
-                try {
-                    if (-not (Test-Path $module.FileName)) {
-                        Write-Host "[WARNING] DLL file not found on disk: $($module.ModuleName)" -ForegroundColor Red
-                        $results += [PSCustomObject]@{
-                            ProcessName = $process.ProcessName
-                            ProcessId = $process.Id
-                            ProcessPath = $processPath
-                            MissingDLL = $module.ModuleName
-                        }
-                    }
-                } catch {
-                    Write-Host "[ERROR] Error analyzing module $($module.ModuleName): $_" -ForegroundColor Yellow
                 }
             }
         } catch {
