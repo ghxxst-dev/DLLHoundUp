@@ -208,7 +208,6 @@ function Test-IsLikelyTarget {
         return $false
     }
 }
-
 # Main scanning function
 function Start-DLLSideloadingScan {
     [CmdletBinding()]
@@ -324,7 +323,7 @@ function Start-DLLSideloadingScan {
 
     # Output results
     if ($results.Count -gt 0) {
-        # Filter out .exe files from results
+        # Filter out .exe files from results for display
         $nonExeResults = $results | Where-Object { $_.ProcessPath -notlike '*.exe' }
         
         if ($nonExeResults.Count -gt 0) {
@@ -351,7 +350,7 @@ function Start-DLLSideloadingScan {
             Write-Host ("Found {0} DLL issues in non-executable files." -f $nonExeResults.Count) -ForegroundColor Yellow
         }
         else {
-            Write-Host "`nNo DLL issues found in non-executable files." -ForegroundColor Yellow
+        Write-Host "`nNo DLL issues found in non-executable files." -ForegroundColor Yellow
         }
     }
     else {
