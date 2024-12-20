@@ -237,13 +237,8 @@ function Start-DLLSideloadingScan {
         }
     }
 
-    # Get all running processes, excluding executables
-    $processes = Get-Process | Where-Object { 
-        $_.MainModule -and 
-        -not $_.MainModule.ModuleName.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase) -and
-        -not $_.MainModule.ModuleName.EndsWith('.com', [StringComparison]::OrdinalIgnoreCase) -and
-        -not $_.MainModule.ModuleName.EndsWith('.msi', [StringComparison]::OrdinalIgnoreCase)
-    }
+    # Get all running processes with a main module
+    $processes = Get-Process | Where-Object { $_.MainModule }
 
     foreach ($process in $processes) {
         try {
@@ -266,11 +261,6 @@ function Start-DLLSideloadingScan {
             Write-Host "`nAnalyzing process: $($process.ProcessName) (PID: $($process.Id))" -ForegroundColor Cyan
             
             $processPath = $process.MainModule.FileName
-            if ($processPath -match '\.(exe|com|msi)$') {
-                Write-Host "Skipping executable: $processPath" -ForegroundColor DarkGray
-                continue
-            }
-            
             Write-Host "Process path: $processPath" -ForegroundColor DarkGray
             
             Write-Host "Analyzing PE imports..." -ForegroundColor DarkGray
@@ -364,7 +354,6 @@ Write-Host "3: Strict Scan (<50MB, <10 DLLs)" -ForegroundColor Red
 Write-Host "4: Custom Scan (Define your own limits)" -ForegroundColor Magenta
 
 $scanChoice = Read-Host "`nEnter scan type (1-4)"
-
 switch ($scanChoice) {
     "1" { Start-DLLSideloadingScan -ScanType "Full" }
     "2" { Start-DLLSideloadingScan -ScanType "Medium" }
