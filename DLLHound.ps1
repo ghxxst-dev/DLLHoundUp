@@ -30,14 +30,16 @@ $COMMON_SYSTEM_DLLS = @(
 function Get-ImportedDLLs {
     param ([string]$FilePath)
     try {
+        Write-Host "Reading PE headers from $FilePath..." -ForegroundColor DarkGray
         $bytes = [System.IO.File]::ReadAllBytes($FilePath)
         $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
         $signature = [BitConverter]::ToUInt32($bytes, $peOffset)
-        if ($signature -ne 0x4550) { return @() } # Invalid PE signature
+        if ($signature -ne 0x4550) { Write-Host "Invalid PE signature for $FilePath" -ForegroundColor Yellow; return @() }
         $importTableRvaOffset = $peOffset + 128
         $importTableRva = [BitConverter]::ToInt32($bytes, $importTableRvaOffset)
-        if ($importTableRva -eq 0) { return @() } # No imports
+        if ($importTableRva -eq 0) { Write-Host "No import table found for $FilePath" -ForegroundColor Yellow; return @() }
         $dlls = @()
+        Write-Host "Extracting imported DLLs..." -ForegroundColor DarkGray
         # Simulated logic for extracting DLLs
         # ...
         return $dlls
@@ -57,10 +59,13 @@ function Test-IsLikelyTarget {
         [int]$CustomDLLs = 0
     )
     try {
+        Write-Host "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -ForegroundColor Cyan
         $size = (Get-Item $Process.MainModule.FileName).Length
         $dllCount = $Process.Modules.Count
         $maxSize = if ($CustomMode) { $CustomSize } elseif ($StrictMode) { $VERY_SMALL_EXECUTABLE_SIZE } else { $SMALL_EXECUTABLE_SIZE }
         $maxDLLs = if ($CustomMode) { $CustomDLLs } elseif ($StrictMode) { $STRICT_MAX_DLL_DEPENDENCIES } else { $MAX_DLL_DEPENDENCIES }
+        Write-Host "Executable Size: $size bytes | Max Allowed: $maxSize bytes" -ForegroundColor DarkGray
+        Write-Host "DLL Count: $dllCount | Max Allowed: $maxDLLs" -ForegroundColor DarkGray
         return ($size -le $maxSize -and $dllCount -le $maxDLLs)
     } catch {
         Write-Host "Error analyzing $($Process.ProcessName): $_" -ForegroundColor Red
@@ -71,12 +76,85 @@ function Test-IsLikelyTarget {
 # Main scanning function
 function Start-DLLSideloadingScan {
     param ([string]$ScanType = "Full", [int64]$CustomSize = 0, [int]$CustomDLLs = 0)
+    Write-Host "Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
+    Write-Host "Scan Type: $ScanType" -ForegroundColor DarkGray
+    if ($ScanType -eq "Custom") {
+        Write-Host "Custom Settings: Max Size = $($CustomSize / 1MB)MB, Max DLLs = $CustomDLLs" -ForegroundColor Magenta
+    }
+
+    $results = @()
     $processes = Get-Process | Where-Object { $_.MainModule }
     foreach ($process in $processes) {
         if ($ScanType -ne "Full" -and -not (Test-IsLikelyTarget -Process $process -StrictMode:($ScanType -eq "Strict") -CustomMode:($ScanType -eq "Custom") -CustomSize $CustomSize -CustomDLLs $CustomDLLs)) {
+            Write-Host "Skipping process $($process.ProcessName) due to filter criteria." -ForegroundColor Yellow
             continue
         }
-        # Scan logic here...
+        try {
+            $processPath = $process.MainModule.FileName
+            Write-Host "Analyzing $($process.ProcessName) (PID: $($process.Id)) at $processPath" -ForegroundColor Cyan
+            $importedDLLs = Get-ImportedDLLs -FilePath $processPath
+            Write-Host "Imported DLLs: $($importedDLLs -join ', ')" -ForegroundColor DarkGray
+            $loadedDLLs = $process.Modules | Where-Object {
+                $_.ModuleName.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)
+            } | Select-Object -ExpandProperty ModuleName
+            Write-Host "Loaded DLLs: $($loadedDLLs -join ', ')" -ForegroundColor DarkGray
+
+            # Log any DLLs that failed to load or are missing
+            Write-Host "Comparing imported DLLs against loaded DLLs..." -ForegroundColor Cyan
+            $missingDLLs = $importedDLLs | Where-Object { $loadedDLLs -notcontains $_ }
+            foreach ($dllName in $missingDLLs) {
+                if ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower()) {
+                    Write-Host "Skipping common system DLL: $dllName" -ForegroundColor Yellow
+                    continue
+                }
+                Write-Host "Potential missing DLL: $dllName" -ForegroundColor Red
+                $results += [PSCustomObject]@{
+                    ProcessName = $process.ProcessName
+                    ProcessId = $process.Id
+                    ProcessPath = $processPath
+                    MissingDLL = $dllName
+                }
+            }
+
+            # Check if loaded DLLs have missing paths
+            foreach ($module in $process.Modules) {
+                try {
+                    if (-not (Test-Path $module.FileName)) {
+                        Write-Host "DLL file not found on disk: $($module.ModuleName)" -ForegroundColor Red
+                        $results += [PSCustomObject]@{
+                            ProcessName = $process.ProcessName
+                            ProcessId = $process.Id
+                            ProcessPath = $processPath
+                            MissingDLL = $module.ModuleName
+                        }
+                    }
+                } catch {
+                    Write-Host "Error analyzing module $($module.ModuleName): $_" -ForegroundColor Yellow
+                }
+            }
+        } catch {
+            Write-Host "Error scanning process $($process.ProcessName): $_" -ForegroundColor Red
+        }
+    }
+
+    # Output results
+    if ($results.Count -gt 0) {
+        $nonExeResults = $results | Where-Object { $_.ProcessPath -notlike '*.exe' }
+        if ($nonExeResults.Count -gt 0) {
+            Write-Host "`nVulnerable Programs Found:" -ForegroundColor Yellow
+            $nonExeResults | ForEach-Object {
+                Write-Host "Process: $_.ProcessName (PID: $_.ProcessId)" -ForegroundColor Green
+                Write-Host "Missing DLL: $_.MissingDLL" -ForegroundColor Red
+            }
+            $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
+            $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$ScanType_$scanTime.csv"
+            $nonExeResults | Export-Csv -Path $exportPath -NoTypeInformation
+            Write-Host "Results exported to: $exportPath" -ForegroundColor Green
+        } else {
+            Write-Host "No DLL issues found in non-executable files." -ForegroundColor Green
+        }
+    } else {
+        Write-Host "No potential DLL sideloading vulnerabilities found." -ForegroundColor Green
     }
 }
 
