@@ -321,7 +321,7 @@ function Start-DLLSideloadingScan {
                     }
                 }
                 catch {
-                    Write-Host "Error processing DLL $dllName`: $_" -ForegroundColor Red
+                    Write-Host "Error processing DLL $dllName: $_" -ForegroundColor Red
                     continue
                 }
             }
