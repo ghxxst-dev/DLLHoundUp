@@ -1,3 +1,4 @@
+# ASCII art title
 Write-Host @"
  _____  _      _      _    _                       _ 
 |  __ \| |    | |    | |  | |                     | |
@@ -16,8 +17,10 @@ Write-Host @"
 #Requires -RunAsAdministrator
 
 # Configuration
-$SMALL_EXECUTABLE_SIZE = 100MB # Maximum size for targeted scan
-$MAX_DLL_DEPENDENCIES = 50     # Maximum number of DLL dependencies for targeted scan
+$VERY_SMALL_EXECUTABLE_SIZE = 50MB  # Maximum size for strict targeted scan
+$SMALL_EXECUTABLE_SIZE = 100MB      # Maximum size for medium targeted scan
+$STRICT_MAX_DLL_DEPENDENCIES = 10   # Maximum DLL dependencies for strict targeted scan
+$MAX_DLL_DEPENDENCIES = 50          # Maximum DLL dependencies for medium targeted scan
 $COMMON_SYSTEM_DLLS = @(
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
     'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
@@ -59,20 +62,23 @@ function Get-DLLSearchPaths {
 # Function to check if a process is a likely target
 function Test-IsLikelyTarget {
     param (
-        [System.Diagnostics.Process]$Process
+        [System.Diagnostics.Process]$Process,
+        [switch]$StrictMode
     )
     
     try {
         # Check executable size
         $executableSize = (Get-Item $Process.MainModule.FileName).Length
-        if ($executableSize -gt $SMALL_EXECUTABLE_SIZE) {
+        $maxSize = if ($StrictMode) { $VERY_SMALL_EXECUTABLE_SIZE } else { $SMALL_EXECUTABLE_SIZE }
+        if ($executableSize -gt $maxSize) {
             Write-Verbose "Process $($Process.ProcessName) excluded: size too large ($executableSize bytes)"
             return $false
         }
 
         # Check number of dependencies
         $dllCount = $Process.Modules.Count
-        if ($dllCount -gt $MAX_DLL_DEPENDENCIES) {
+        $maxDeps = if ($StrictMode) { $STRICT_MAX_DLL_DEPENDENCIES } else { $MAX_DLL_DEPENDENCIES }
+        if ($dllCount -gt $maxDeps) {
             Write-Verbose "Process $($Process.ProcessName) excluded: too many dependencies ($dllCount)"
             return $false
         }
@@ -105,15 +111,24 @@ function Test-IsLikelyTarget {
 # Main scanning function
 function Start-DLLSideloadingScan {
     param (
-        [switch]$TargetedScanOnly
+        [ValidateSet("Full", "Medium", "Strict")]
+        [string]$ScanType = "Full"
     )
 
     # Initialize results array
     $results = @()
 
     Write-Host "Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
-    if ($TargetedScanOnly) {
-        Write-Host "Running in targeted mode - focusing on likely vulnerable applications" -ForegroundColor Yellow
+    switch ($ScanType) {
+        "Strict" {
+            Write-Host "Running in strict targeted mode - focusing on small applications (<50MB, <10 DLLs)" -ForegroundColor Red
+        }
+        "Medium" {
+            Write-Host "Running in medium targeted mode - focusing on medium-sized applications (<100MB, <50 DLLs)" -ForegroundColor Yellow
+        }
+        "Full" {
+            Write-Host "Running in full scan mode - scanning all applications" -ForegroundColor Green
+        }
     }
 
     # Get all running processes
@@ -121,8 +136,8 @@ function Start-DLLSideloadingScan {
 
     foreach ($process in $processes) {
         try {
-            if ($TargetedScanOnly) {
-                $isLikelyTarget = Test-IsLikelyTarget -Process $process
+            if ($ScanType -ne "Full") {
+                $isLikelyTarget = Test-IsLikelyTarget -Process $process -StrictMode:($ScanType -eq "Strict")
                 if (-not $isLikelyTarget) {
                     continue
                 }
@@ -212,9 +227,20 @@ function Start-DLLSideloadingScan {
 }
 
 # Prompt user for scan type
-$scanType = Read-Host "Enter scan type (1 for Full Scan, 2 for Targeted Scan)"
-if ($scanType -eq "2") {
-    Start-DLLSideloadingScan -TargetedScanOnly
+Write-Host "`nSelect scan type:" -ForegroundColor Cyan
+Write-Host "1: Full Scan (All Applications)" -ForegroundColor Green
+Write-Host "2: Medium Scan (<100MB, <50 DLLs)" -ForegroundColor Yellow
+Write-Host "3: Strict Scan (<50MB, <10 DLLs)" -ForegroundColor Red
+
+$scanChoice = Read-Host "`nEnter scan type (1-3)"
+switch ($scanChoice) {
+    "1" { Start-DLLSideloadingScan -ScanType "Full" }
+    "2" { Start-DLLSideloadingScan -ScanType "Medium" }
+    "3" { Start-DLLSideloadingScan -ScanType "Strict" }
+    default { 
+        Write-Host "Invalid choice. Running Full Scan." -ForegroundColor Yellow
+        Start-DLLSideloadingScan -ScanType "Full" 
+    }
 }
 else {
     Start-DLLSideloadingScan
