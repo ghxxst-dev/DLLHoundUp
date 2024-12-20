@@ -1,4 +1,3 @@
-# ASCII art title
 Write-Host @"
  _____  _      _      _    _                       _ 
 |  __ \| |    | |    | |  | |                     | |
