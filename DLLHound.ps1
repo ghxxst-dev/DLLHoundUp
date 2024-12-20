@@ -96,67 +96,38 @@ function Get-ImportedDLLs {
     }
 }
 
-# Function to validate likely targets
-function Test-IsLikelyTarget {
-    param (
-        [System.Diagnostics.Process]$Process,
-        [switch]$StrictMode,
-        [switch]$CustomMode,
-        [int64]$CustomSize = 0,
-        [int]$CustomDLLs = 0
-    )
-    try {
-        Write-Host "[INFO] Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -ForegroundColor Cyan
-        $size = (Get-Item $Process.MainModule.FileName).Length
-        $dllCount = $Process.Modules.Count
-        $maxSize = if ($CustomMode) { $CustomSize } elseif ($StrictMode) { $VERY_SMALL_EXECUTABLE_SIZE } else { $SMALL_EXECUTABLE_SIZE }
-        $maxDLLs = if ($CustomMode) { $CustomDLLs } elseif ($StrictMode) { $STRICT_MAX_DLL_DEPENDENCIES } else { $MAX_DLL_DEPENDENCIES }
-        Write-Host "[INFO] Executable Size: $size bytes | Max Allowed: $maxSize bytes" -ForegroundColor DarkGray
-        Write-Host "[INFO] DLL Count: $dllCount | Max Allowed: $maxDLLs" -ForegroundColor DarkGray
-        return ($size -le $maxSize -and $dllCount -le $maxDLLs)
-    } catch {
-        Write-Host "[ERROR] Error analyzing $($Process.ProcessName): $_" -ForegroundColor Red
-        return $false
-    }
-}
-
 # Main scanning function
 function Start-DLLSideloadingScan {
     param ([string]$ScanType = "Full", [int64]$CustomSize = 0, [int]$CustomDLLs = 0)
     Write-Host "[INFO] Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
-    Write-Host "[INFO] Scan Type: $ScanType" -ForegroundColor Cyan
-    if ($ScanType -eq "Custom") {
-        Write-Host "[INFO] Custom Settings: Max Size = $($CustomSize / 1MB)MB, Max DLLs = $CustomDLLs" -ForegroundColor Magenta
-    }
 
     $results = @()
     $processes = Get-Process | Where-Object { $_.MainModule -and $STANDARD_WINDOWS_PROCESSES -notcontains $_.ProcessName }
     foreach ($process in $processes) {
-        Write-Host "[INFO] Processing: $($process.ProcessName) (PID: $($process.Id))" -ForegroundColor Cyan
-        if ($ScanType -ne "Full" -and -not (Test-IsLikelyTarget -Process $process -StrictMode:($ScanType -eq "Strict") -CustomMode:($ScanType -eq "Custom") -CustomSize $CustomSize -CustomDLLs $CustomDLLs)) {
-            Write-Host "[INFO] Skipping process $($process.ProcessName) due to filter criteria." -ForegroundColor Yellow
-            continue
-        }
+        Write-Host "[INFO] Scanning process: $($process.ProcessName) (PID: $($process.Id))" -ForegroundColor Cyan
         try {
             $processPath = $process.MainModule.FileName
-            Write-Host "[INFO] Analyzing process at $processPath..." -ForegroundColor Cyan
             $importedDLLs = Get-ImportedDLLs -FilePath $processPath
             $loadedDLLs = $process.Modules | Where-Object {
                 $_.ModuleName.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)
             } | Select-Object -ExpandProperty ModuleName
 
+            # Identify and print all missing DLLs
             $missingDLLs = $importedDLLs | Where-Object { $loadedDLLs -notcontains $_ }
-            foreach ($dllName in $missingDLLs) {
-                if ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower()) {
-                    Write-Host "[INFO] Skipping common system DLL: $dllName" -ForegroundColor Yellow
-                    continue
+            if ($missingDLLs.Count -gt 0) {
+                Write-Host "[INFO] Missing DLLs for process: $($process.ProcessName)" -ForegroundColor Yellow
+                $missingDLLs | ForEach-Object {
+                    Write-Host " - Missing: $_" -ForegroundColor Red
                 }
-                Write-Host "[POTENTIAL] Potential DLL sideload found: $dllName" -ForegroundColor Red
-                $results += [PSCustomObject]@{
-                    ProcessName = $process.ProcessName
-                    ProcessId = $process.Id
-                    ProcessPath = $processPath
-                    MissingDLL = $dllName
+
+                # Save missing DLL information
+                foreach ($dll in $missingDLLs) {
+                    $results += [PSCustomObject]@{
+                        ProcessName = $process.ProcessName
+                        ProcessId = $process.Id
+                        ProcessPath = $processPath
+                        MissingDLL = $dll
+                    }
                 }
             }
         } catch {
@@ -166,10 +137,10 @@ function Start-DLLSideloadingScan {
 
     # Output results
     if ($results.Count -gt 0) {
-        Write-Host "[INFO] Vulnerable Programs Found:" -ForegroundColor Yellow
+        Write-Host "[INFO] Vulnerable programs found:" -ForegroundColor Yellow
         $results | ForEach-Object {
             Write-Host "Process: $_.ProcessName (PID: $_.ProcessId)" -ForegroundColor Green
-            Write-Host "Missing DLL: $_.MissingDLL" -ForegroundColor Red
+            Write-Host " - Missing DLL: $_.MissingDLL" -ForegroundColor Red
         }
 
         # CSV Export Option
