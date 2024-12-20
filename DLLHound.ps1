@@ -44,9 +44,9 @@ function Get-ImportedDLLs {
         # ...
         return $dlls
     } catch {
-        Write-Host "Error reading $FilePath: $_" -ForegroundColor Red
-        return @()
-    }
+    Write-Host "Error reading $FilePath: $_" -ForegroundColor Red
+    return @()
+}
 }
 
 # Function to validate likely targets
