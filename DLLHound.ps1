@@ -351,4 +351,33 @@ function Start-DLLSideloadingScan {
         Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
     }
     else {
-        Write-Host "`nNo potential DLL sideloading vulnerabilities found." -Foregroun
+        Write-Host "`nNo potential DLL sideloading vulnerabilities found." -ForegroundColor Green
+    }
+}
+# Prompt user for scan type
+Write-Host "`nSelect scan type:" -ForegroundColor Cyan
+Write-Host "1: Full Scan (All Applications)" -ForegroundColor Green
+Write-Host "2: Medium Scan (<100MB, <50 DLLs)" -ForegroundColor Yellow
+Write-Host "3: Strict Scan (<50MB, <10 DLLs)" -ForegroundColor Red
+Write-Host "4: Custom Scan (Define your own limits)" -ForegroundColor Magenta
+
+$scanChoice = Read-Host "`nEnter scan type (1-4)"
+
+switch ($scanChoice) {
+    "1" { Start-DLLSideloadingScan -ScanType "Full" }
+    "2" { Start-DLLSideloadingScan -ScanType "Medium" }
+    "3" { Start-DLLSideloadingScan -ScanType "Strict" }
+    "4" { 
+        $customSize = Read-Host "Enter maximum executable size in MB (e.g., 75 for 75MB)"
+        $customDLLs = Read-Host "Enter maximum number of DLL dependencies (e.g., 25)"
+        
+        # Convert MB to bytes
+        $sizeInBytes = [int64]$customSize * 1MB
+        
+        Start-DLLSideloadingScan -ScanType "Custom" -CustomSize $sizeInBytes -CustomDLLs ([int]$customDLLs)
+    }
+    default { 
+        Write-Host "Invalid choice. Running Full Scan." -ForegroundColor Yellow
+        Start-DLLSideloadingScan -ScanType "Full" 
+    }
+}
