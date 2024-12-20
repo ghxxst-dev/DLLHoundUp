@@ -1,6 +1,6 @@
 # DLLHound - DLL Sideloading Scanner
 # Author: @ajm4n
-# This script scans processes and their loaded DLLs to identify potential DLL sideloading vulnerabilities
+# Description: Scans processes for potential DLL sideloading vulnerabilities
 
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
@@ -21,8 +21,6 @@ $VERY_SMALL_EXECUTABLE_SIZE = 50MB  # Maximum size for strict targeted scan
 $SMALL_EXECUTABLE_SIZE = 100MB      # Maximum size for medium targeted scan
 $STRICT_MAX_DLL_DEPENDENCIES = 10   # Maximum DLL dependencies for strict targeted scan
 $MAX_DLL_DEPENDENCIES = 50          # Maximum DLL dependencies for medium targeted scan
-$CUSTOM_MAX_SIZE = 0                # Will be set by user input for custom scan
-$CUSTOM_MAX_DLLS = 0                # Will be set by user input for custom scan
 
 $COMMON_SYSTEM_DLLS = @(
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
@@ -37,31 +35,22 @@ function Get-ImportedDLLs {
     try {
         Write-Host "Reading PE header from: $FilePath" -ForegroundColor DarkGray
         
-        # Read the PE file into a byte array
         $bytes = [System.IO.File]::ReadAllBytes($FilePath)
-        
-        # Find PE header offset (at e_lfanew)
         $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-        
-        # Check PE signature
         $signature = [BitConverter]::ToUInt32($bytes, $peOffset)
+        
         if ($signature -ne 0x4550) { # "PE\0\0"
             Write-Host "Invalid PE signature found" -ForegroundColor Yellow
             return @()
         }
         
-        # Get the optional header offset
         $optionalHeaderOffset = $peOffset + 24
-        
-        # Get Import Directory RVA and size
         $importDirRvaOffset = $optionalHeaderOffset + 104
         $importDirRva = [BitConverter]::ToInt32($bytes, $importDirRvaOffset)
-        
         $dllImports = @()
-        $sectionOffset = $optionalHeaderOffset + 240 # Start of section headers
-        
-        # Find the section containing the import directory
-        for ($i = 0; $i -lt 16; $i++) { # Max 16 sections
+        $sectionOffset = $optionalHeaderOffset + 240
+
+        for ($i = 0; $i -lt 16; $i++) {
             $sectionStart = $sectionOffset + ($i * 40)
             if ($sectionStart + 40 -gt $bytes.Length) { break }
             
@@ -73,17 +62,14 @@ function Get-ImportedDLLs {
                 
                 $fileOffset = ($importDirRva - $virtualAddress) + $rawAddress
                 
-                # Read each import descriptor
                 while ($fileOffset -lt $bytes.Length - 20) {
                     $nameRva = [BitConverter]::ToInt32($bytes, $fileOffset + 12)
                     if ($nameRva -eq 0) { break }
                     
-                    # Convert RVA to file offset for the DLL name
                     $nameOffset = ($nameRva - $virtualAddress) + $rawAddress
-                    
-                    # Read DLL name
                     $dllName = ""
                     $currentOffset = $nameOffset
+                    
                     while ($currentOffset -lt $bytes.Length) {
                         $byte = $bytes[$currentOffset]
                         if ($byte -eq 0) { break }
@@ -120,43 +106,38 @@ function Get-DLLSearchOrder {
     $searchPaths = @()
     $processDir = Split-Path -Parent $ProcessPath
     
-    # Windows DLL Search Order:
-    # 1. The directory from which the application loaded
+    # Windows DLL Search Order
     $searchPaths += @{
         Priority = 1
         Path = Join-Path $processDir $DLLName
         Description = "Application Directory"
     }
     
-    # 2. System directory (System32)
     $searchPaths += @{
         Priority = 2
         Path = Join-Path $env:SystemRoot "System32\$DLLName"
         Description = "System32 Directory"
     }
     
-    # 3. 16-bit system directory (System)
     $searchPaths += @{
         Priority = 3
         Path = Join-Path $env:SystemRoot "System\$DLLName"
         Description = "16-bit System Directory"
     }
     
-    # 4. Windows directory
     $searchPaths += @{
         Priority = 4
         Path = Join-Path $env:SystemRoot $DLLName
         Description = "Windows Directory"
     }
     
-    # 5. Current working directory
     $searchPaths += @{
         Priority = 5
         Path = Join-Path (Get-Location) $DLLName
         Description = "Current Directory"
     }
     
-    # 6. PATH environment variable directories
+    # PATH environment variable directories
     $envPaths = $env:PATH -split ';'
     $priority = 6
     foreach ($path in $envPaths) {
@@ -195,7 +176,6 @@ function Test-IsLikelyTarget {
         }
         
         if ($executableSize -gt $maxSize) {
-            Write-Verbose "Process $($Process.ProcessName) excluded: size too large ($executableSize bytes)"
             return $false
         }
 
@@ -210,23 +190,21 @@ function Test-IsLikelyTarget {
         }
         
         if ($dllCount -gt $maxDeps) {
-            Write-Verbose "Process $($Process.ProcessName) excluded: too many dependencies ($dllCount)"
             return $false
         }
 
-        # Check if it's running from Program Files or other common install locations
+        # Check if it's running from system locations
         $processPath = $Process.MainModule.FileName
         if ($processPath -like "*\Windows\*" -or 
             $processPath -like "*\Microsoft.NET\*" -or 
             $processPath -like "*\WindowsApps\*") {
-            Write-Verbose "Process $($Process.ProcessName) excluded: system location"
             return $false
         }
 
         return $true
     }
     catch {
-        Write-Verbose "Error checking process $($Process.ProcessName): $_"
+        Write-Host "Error checking process $($Process.ProcessName): $_" -ForegroundColor Red
         return $false
     }
 }
@@ -240,9 +218,7 @@ function Start-DLLSideloadingScan {
         [int]$CustomDLLs = 0
     )
 
-    # Initialize results array
     $results = @()
-
     Write-Host "Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
     
     switch ($ScanType) {
@@ -288,10 +264,7 @@ function Start-DLLSideloadingScan {
 
             Write-Host "`nAnalyzing process: $($process.ProcessName) (PID: $($process.Id))" -ForegroundColor Cyan
             
-            # Get process path and check if it's an executable
             $processPath = $process.MainModule.FileName
-            
-            # Skip if this is an executable
             if ($processPath -match '\.(exe|com|msi)$') {
                 Write-Host "Skipping executable: $processPath" -ForegroundColor DarkGray
                 continue
@@ -299,11 +272,9 @@ function Start-DLLSideloadingScan {
             
             Write-Host "Process path: $processPath" -ForegroundColor DarkGray
             
-            # Get list of imported DLLs from PE header
             Write-Host "Analyzing PE imports..." -ForegroundColor DarkGray
             $importedDLLs = Get-ImportedDLLs -FilePath $processPath
             
-            # Get list of actually loaded DLLs
             Write-Host "Getting loaded modules..." -ForegroundColor DarkGray
             $loadedDLLs = $process.Modules | Where-Object {
                 $_.ModuleName.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)
@@ -311,20 +282,16 @@ function Start-DLLSideloadingScan {
             
             Write-Host "Found $($importedDLLs.Count) imported DLLs, $($loadedDLLs.Count) loaded DLLs" -ForegroundColor DarkGray
             
-            # Find missing DLLs (imported but not loaded)
             $missingDLLs = $importedDLLs | Where-Object { $loadedDLLs -notcontains $_ }
             
             foreach ($dllName in $missingDLLs) {
                 try {
-                    # Skip common system DLLs in targeted modes
                     if ($ScanType -ne "Full" -and ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower())) {
                         Write-Host "Skipping system DLL: $dllName" -ForegroundColor DarkGray
                         continue
                     }
                     
                     Write-Host "`nChecking missing DLL: $dllName" -ForegroundColor Yellow
-                    
-                    # Get all possible load paths
                     $searchPaths = Get-DLLSearchOrder -ProcessPath $processPath -DLLName $dllName
                     
                     foreach ($searchPath in $searchPaths) {
@@ -347,3 +314,41 @@ function Start-DLLSideloadingScan {
                                 SearchLocation = $searchPath.Description
                                 ImportedDLLCount = $importedDLLs.Count
                                 LoadedDLLCount = $loadedDLLs.Count
+                                ScanType = $ScanType
+                            }
+                        }
+                    }
+                }
+                catch {
+                    Write-Host "Error processing DLL $dllName: $_" -ForegroundColor Red
+                    continue
+                }
+            }
+        }
+        catch {
+            Write-Host "Error processing process $($process.ProcessName): $_" -ForegroundColor Red
+            continue
+        }
+    }
+
+    # Output results
+    if ($results.Count -gt 0) {
+        Write-Host "`nVulnerable Programs:" -ForegroundColor Yellow
+        $results | ForEach-Object {
+            Write-Host "`nProgram: " -NoNewline -ForegroundColor Green
+            Write-Host "$($_.ProcessName)"
+            Write-Host "Path: " -NoNewline -ForegroundColor Green
+            Write-Host "$($_.ProcessPath)"
+            Write-Host "Missing DLL: " -NoNewline -ForegroundColor Green
+            Write-Host "$($_.MissingDLL)"
+            Write-Host "---"
+        }
+        
+        # Export results to CSV
+        $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
+        $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_${ScanType}_${scanTime}.csv"
+        $results | Export-Csv -Path $exportPath -NoTypeInformation
+        Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
+    }
+    else {
+        Write-Host "`nNo potential DLL sideloading vulnerabilities found." -Foregroun
