@@ -237,7 +237,7 @@ function Start-DLLSideloadingScan {
         }
     }
 
-    # Get all running processes with a main module
+    # Get all running processes
     $processes = Get-Process | Where-Object { $_.MainModule }
 
     foreach ($process in $processes) {
@@ -322,14 +322,14 @@ function Start-DLLSideloadingScan {
         }
     }
 
-     # Output results
+    # Output results
     if ($results.Count -gt 0) {
-        # Filter results for exe files only
-        $exeResults = $results | Where-Object { $_.ProcessPath -like '*.exe' }
+        # Filter out .exe files from results
+        $nonExeResults = $results | Where-Object { $_.ProcessPath -notlike '*.exe' }
         
-        if ($exeResults.Count -gt 0) {
+        if ($nonExeResults.Count -gt 0) {
             Write-Host "`nVulnerable Programs:" -ForegroundColor Yellow
-            $exeResults | ForEach-Object {
+            $nonExeResults | ForEach-Object {
                 Write-Host "`nProgram: " -NoNewline -ForegroundColor Green
                 Write-Host $_.ProcessName
                 Write-Host "Path: " -NoNewline -ForegroundColor Green
@@ -338,23 +338,26 @@ function Start-DLLSideloadingScan {
                 Write-Host $_.MissingDLL
                 Write-Host "Search Path: " -NoNewline -ForegroundColor Green
                 Write-Host $_.SearchPath
+                Write-Host "Search Priority: " -NoNewline -ForegroundColor Green
+                Write-Host $_.SearchPriority
                 Write-Host "---"
             }
             
             # Export results to CSV
             $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
             $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$($ScanType)_$($scanTime).csv"
-            $exeResults | Export-Csv -Path $exportPath -NoTypeInformation
+            $nonExeResults | Export-Csv -Path $exportPath -NoTypeInformation
             Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
-            Write-Host ("Found {0} vulnerable executables with potentially missing DLLs." -f $exeResults.Count) -ForegroundColor Yellow
+            Write-Host ("Found {0} DLL issues in non-executable files." -f $nonExeResults.Count) -ForegroundColor Yellow
         }
         else {
-            Write-Host "`nNo vulnerable executables found after filtering." -ForegroundColor Yellow
+            Write-Host "`nNo DLL issues found in non-executable files." -ForegroundColor Yellow
         }
     }
     else {
         Write-Host "`nNo potential DLL sideloading vulnerabilities found." -ForegroundColor Green
     }
+}
 
 # Prompt user for scan type
 Write-Host "`nSelect scan type:" -ForegroundColor Cyan
@@ -364,6 +367,7 @@ Write-Host "3: Strict Scan (<50MB, <10 DLLs)" -ForegroundColor Red
 Write-Host "4: Custom Scan (Define your own limits)" -ForegroundColor Magenta
 
 $scanChoice = Read-Host "`nEnter scan type (1-4)"
+
 switch ($scanChoice) {
     "1" { Start-DLLSideloadingScan -ScanType "Full" }
     "2" { Start-DLLSideloadingScan -ScanType "Medium" }
