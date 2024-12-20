@@ -1,3 +1,11 @@
+# DLLHound - DLL Sideloading Scanner
+# This script scans running processes and their loaded DLLs to identify potential DLL sideloading opportunities
+# with additional filtering for high-probability targets and custom scan options
+
+# Requires running with administrator privileges
+#Requires -RunAsAdministrator
+
+# ASCII art title
 Write-Host @"
  _____  _      _      _    _                       _ 
 |  __ \| |    | |    | |  | |                     | |
@@ -8,20 +16,14 @@ Write-Host @"
                         by @ajm4n
 "@ -ForegroundColor Cyan
 
-# DLL Sideloading Scanner
-# This script scans running processes and their loaded DLLs to identify potential DLL sideloading opportunities
-# with additional filtering for high-probability targets
-
-# Requires running with administrator privileges
-#Requires -RunAsAdministrator
-
 # Configuration
 $VERY_SMALL_EXECUTABLE_SIZE = 50MB  # Maximum size for strict targeted scan
 $SMALL_EXECUTABLE_SIZE = 100MB      # Maximum size for medium targeted scan
 $STRICT_MAX_DLL_DEPENDENCIES = 10   # Maximum DLL dependencies for strict targeted scan
 $MAX_DLL_DEPENDENCIES = 50          # Maximum DLL dependencies for medium targeted scan
-$CUSTOM_MAX_SIZE = 0                # Will be set by user input
-$CUSTOM_MAX_DLLS = 0                # Will be set by user input
+$CUSTOM_MAX_SIZE = 0                # Will be set by user input for custom scan
+$CUSTOM_MAX_DLLS = 0                # Will be set by user input for custom scan
+
 $COMMON_SYSTEM_DLLS = @(
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
     'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
@@ -53,9 +55,6 @@ function Get-DLLSearchPaths {
     
     # 3. Windows directory
     $searchPaths += Join-Path $env:SystemRoot $DLLName
-    
-    # 4. Current working directory (for completeness)
-    $searchPaths += Join-Path (Get-Location) $DLLName
     
     return $searchPaths
 }
@@ -139,6 +138,7 @@ function Start-DLLSideloadingScan {
     $results = @()
 
     Write-Host "Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
+    
     switch ($ScanType) {
         "Strict" {
             Write-Host "Running in strict targeted mode - focusing on small applications (<50MB, <10 DLLs)" -ForegroundColor Red
@@ -188,8 +188,8 @@ function Start-DLLSideloadingScan {
                     $dllName = $module.ModuleName
                     $dllPath = $module.FileName
 
-                    # Skip common system DLLs in targeted mode
-                    if ($TargetedScanOnly -and ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower())) {
+                    # Skip common system DLLs in targeted modes
+                    if ($ScanType -ne "Full" -and ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower())) {
                         continue
                     }
                     
@@ -206,7 +206,7 @@ function Start-DLLSideloadingScan {
                                 DLLCount = $modules.Count
                                 MissingDLL = $dllName
                                 SearchedPath = $path
-                                IsHighProbability = $TargetedScanOnly
+                                ScanType = $ScanType
                             }
                         }
                     }
@@ -225,17 +225,6 @@ function Start-DLLSideloadingScan {
 
     # Output results
     if ($results.Count -gt 0) {
-        Write-Host "`nPotential DLL Sideloading Vulnerabilities Found:" -ForegroundColor Red
-        
-        if ($TargetedScanOnly) {
-            Write-Host "Showing only high-probability targets matching criteria:" -ForegroundColor Yellow
-            Write-Host "- Executable size < 100MB" -ForegroundColor Yellow
-            Write-Host "- Less than 50 DLL dependencies" -ForegroundColor Yellow
-            Write-Host "- Not running from system directories" -ForegroundColor Yellow
-            Write-Host "- Has non-system DLL dependencies" -ForegroundColor Yellow
-        }
-        
-        # Display simplified output in terminal
         Write-Host "`nVulnerable Programs:" -ForegroundColor Yellow
         $results | ForEach-Object {
             Write-Host "`nProgram: " -NoNewline -ForegroundColor Green
@@ -248,8 +237,8 @@ function Start-DLLSideloadingScan {
         }
         
         # Export results to CSV
-        $scanType = if ($TargetedScanOnly) { "Targeted" } else { "Full" }
-        $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_${scanType}_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+        $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
+        $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_${ScanType}_${scanTime}.csv"
         $results | Export-Csv -Path $exportPath -NoTypeInformation
         Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
     }
