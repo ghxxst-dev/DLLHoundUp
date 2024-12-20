@@ -1,3 +1,6 @@
+# Enhanced DLL Sideloading Scanner
+# Scans processes for missing or unresolved DLLs using dynamic analysis
+
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
