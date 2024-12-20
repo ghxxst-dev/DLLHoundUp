@@ -9,7 +9,7 @@ Write-Host @"
 | |  | | |    | |    |  __  |/ _ \| | | | '_ \ / _  |
 | |__| | |____| |____| |  | | (_) | |_| | | | | (_| |
 |_____/|______|______|_|  |_|\___/ \__,_|_| |_|\__,_|
-                  by @ajm4n - Inspired by Spartacus
+                  by @ajm4n
 "@ -ForegroundColor Cyan
 
 # Configuration
