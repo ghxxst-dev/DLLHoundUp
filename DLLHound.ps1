@@ -21,6 +21,8 @@ $VERY_SMALL_EXECUTABLE_SIZE = 50MB  # Maximum size for strict targeted scan
 $SMALL_EXECUTABLE_SIZE = 100MB      # Maximum size for medium targeted scan
 $STRICT_MAX_DLL_DEPENDENCIES = 10   # Maximum DLL dependencies for strict targeted scan
 $MAX_DLL_DEPENDENCIES = 50          # Maximum DLL dependencies for medium targeted scan
+$CUSTOM_MAX_SIZE = 0                # Will be set by user input
+$CUSTOM_MAX_DLLS = 0                # Will be set by user input
 $COMMON_SYSTEM_DLLS = @(
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
     'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
@@ -63,13 +65,23 @@ function Get-DLLSearchPaths {
 function Test-IsLikelyTarget {
     param (
         [System.Diagnostics.Process]$Process,
-        [switch]$StrictMode
+        [switch]$StrictMode,
+        [switch]$CustomMode,
+        [int64]$CustomSize,
+        [int]$CustomDLLs
     )
     
     try {
         # Check executable size
         $executableSize = (Get-Item $Process.MainModule.FileName).Length
-        $maxSize = if ($StrictMode) { $VERY_SMALL_EXECUTABLE_SIZE } else { $SMALL_EXECUTABLE_SIZE }
+        $maxSize = if ($CustomMode) { 
+            $CustomSize 
+        } elseif ($StrictMode) { 
+            $VERY_SMALL_EXECUTABLE_SIZE 
+        } else { 
+            $SMALL_EXECUTABLE_SIZE 
+        }
+        
         if ($executableSize -gt $maxSize) {
             Write-Verbose "Process $($Process.ProcessName) excluded: size too large ($executableSize bytes)"
             return $false
@@ -77,7 +89,14 @@ function Test-IsLikelyTarget {
 
         # Check number of dependencies
         $dllCount = $Process.Modules.Count
-        $maxDeps = if ($StrictMode) { $STRICT_MAX_DLL_DEPENDENCIES } else { $MAX_DLL_DEPENDENCIES }
+        $maxDeps = if ($CustomMode) {
+            $CustomDLLs
+        } elseif ($StrictMode) {
+            $STRICT_MAX_DLL_DEPENDENCIES
+        } else {
+            $MAX_DLL_DEPENDENCIES
+        }
+        
         if ($dllCount -gt $maxDeps) {
             Write-Verbose "Process $($Process.ProcessName) excluded: too many dependencies ($dllCount)"
             return $false
@@ -111,8 +130,10 @@ function Test-IsLikelyTarget {
 # Main scanning function
 function Start-DLLSideloadingScan {
     param (
-        [ValidateSet("Full", "Medium", "Strict")]
-        [string]$ScanType = "Full"
+        [ValidateSet("Full", "Medium", "Strict", "Custom")]
+        [string]$ScanType = "Full",
+        [int64]$CustomSize = 0,
+        [int]$CustomDLLs = 0
     )
 
     # Initialize results array
@@ -126,6 +147,9 @@ function Start-DLLSideloadingScan {
         "Medium" {
             Write-Host "Running in medium targeted mode - focusing on medium-sized applications (<100MB, <50 DLLs)" -ForegroundColor Yellow
         }
+        "Custom" {
+            Write-Host "Running in custom mode - Max Size: $($CustomSize/1MB)MB, Max DLLs: $CustomDLLs" -ForegroundColor Magenta
+        }
         "Full" {
             Write-Host "Running in full scan mode - scanning all applications" -ForegroundColor Green
         }
@@ -137,7 +161,16 @@ function Start-DLLSideloadingScan {
     foreach ($process in $processes) {
         try {
             if ($ScanType -ne "Full") {
-                $isLikelyTarget = Test-IsLikelyTarget -Process $process -StrictMode:($ScanType -eq "Strict")
+                $customParams = @{
+                    Process = $process
+                    StrictMode = ($ScanType -eq "Strict")
+                    CustomMode = ($ScanType -eq "Custom")
+                }
+                if ($ScanType -eq "Custom") {
+                    $customParams['CustomSize'] = $CustomSize
+                    $customParams['CustomDLLs'] = $CustomDLLs
+                }
+                $isLikelyTarget = Test-IsLikelyTarget @customParams
                 if (-not $isLikelyTarget) {
                     continue
                 }
@@ -231,17 +264,25 @@ Write-Host "`nSelect scan type:" -ForegroundColor Cyan
 Write-Host "1: Full Scan (All Applications)" -ForegroundColor Green
 Write-Host "2: Medium Scan (<100MB, <50 DLLs)" -ForegroundColor Yellow
 Write-Host "3: Strict Scan (<50MB, <10 DLLs)" -ForegroundColor Red
+Write-Host "4: Custom Scan (Define your own limits)" -ForegroundColor Magenta
 
-$scanChoice = Read-Host "`nEnter scan type (1-3)"
+$scanChoice = Read-Host "`nEnter scan type (1-4)"
+
 switch ($scanChoice) {
     "1" { Start-DLLSideloadingScan -ScanType "Full" }
     "2" { Start-DLLSideloadingScan -ScanType "Medium" }
     "3" { Start-DLLSideloadingScan -ScanType "Strict" }
+    "4" { 
+        $customSize = Read-Host "Enter maximum executable size in MB (e.g., 75 for 75MB)"
+        $customDLLs = Read-Host "Enter maximum number of DLL dependencies (e.g., 25)"
+        
+        # Convert MB to bytes
+        $sizeInBytes = [int64]$customSize * 1MB
+        
+        Start-DLLSideloadingScan -ScanType "Custom" -CustomSize $sizeInBytes -CustomDLLs ([int]$customDLLs)
+    }
     default { 
         Write-Host "Invalid choice. Running Full Scan." -ForegroundColor Yellow
         Start-DLLSideloadingScan -ScanType "Full" 
     }
-}
-else {
-    Start-DLLSideloadingScan
 }
