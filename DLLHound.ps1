@@ -11,7 +11,7 @@ Write-Host @"
 | |  | | |    | |    | |__| | ___  _   _ _ __   __| |
 | |  | | |    | |    |  __  |/ _ \| | | | '_ \ / _  |
 | |__| | |____| |____| |  | | (_) | |_| | | | | (_| |
-|_____/|______|______|_|  |_|\___/ \__,_|_| |_|\__,_|
+|_____/|______|______|_|  |_|\___/ \__,_|_| |_|
                         by @ajm4n
 "@ -ForegroundColor Cyan
 
@@ -30,21 +30,21 @@ $COMMON_SYSTEM_DLLS = @(
 function Get-ImportedDLLs {
     param ([string]$FilePath)
     try {
-        Write-Host "Reading PE headers from $FilePath..." -ForegroundColor DarkGray
+        Write-Host "Reading PE headers from ${FilePath}..." -ForegroundColor DarkGray
         $bytes = [System.IO.File]::ReadAllBytes($FilePath)
         $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
         $signature = [BitConverter]::ToUInt32($bytes, $peOffset)
-        if ($signature -ne 0x4550) { Write-Host "Invalid PE signature for $FilePath" -ForegroundColor Yellow; return @() }
+        if ($signature -ne 0x4550) { Write-Host "Invalid PE signature for ${FilePath}" -ForegroundColor Yellow; return @() }
         $importTableRvaOffset = $peOffset + 128
         $importTableRva = [BitConverter]::ToInt32($bytes, $importTableRvaOffset)
-        if ($importTableRva -eq 0) { Write-Host "No import table found for $FilePath" -ForegroundColor Yellow; return @() }
+        if ($importTableRva -eq 0) { Write-Host "No import table found for ${FilePath}" -ForegroundColor Yellow; return @() }
         $dlls = @()
         Write-Host "Extracting imported DLLs..." -ForegroundColor DarkGray
         # Simulated logic for extracting DLLs
         # ...
         return $dlls
     } catch {
-        Write-Host "Error reading $FilePath: $_" -ForegroundColor Red
+        Write-Host "Error reading ${FilePath}: $_" -ForegroundColor Red
         return @()
     }
 }
