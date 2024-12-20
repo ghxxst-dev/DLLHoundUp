@@ -71,7 +71,7 @@ function Get-DLLSearchPaths {
 function Test-DLLExists {
     param ([string]$DLLPath)
     try {
-        return Test-Path $DLLPath
+        return [System.IO.File]::Exists($DLLPath)
     } catch {
         Write-Host "[ERROR] Unable to check DLL existence: $DLLPath - $_" -ForegroundColor Red
         return $false
@@ -124,7 +124,7 @@ function Analyze-Process {
                 $dllPaths = Get-DLLSearchPaths -ProcessPath $processPath -DLLName $dllName
 
                 # Check if the DLL exists in any search path
-                $found = $dllPaths | Where-Object { Test-DLLExists -DLLPath $_ }
+                $found = $dllPaths | Where-Object { Test-DLLExists $_ }
                 if (-not $found) {
                     Write-Host "[MISSING] DLL Not Found: $dllName, Affected Executable: $($Process.MainModule.FileName)" -ForegroundColor Red
                     $missingDLLs += $dllName
