@@ -160,8 +160,8 @@ function Test-IsLikelyTarget {
         [System.Diagnostics.Process]$Process,
         [switch]$StrictMode,
         [switch]$CustomMode,
-        [int64]$CustomSize,
-        [int]$CustomDLLs
+        [int64]$CustomSize = 0,
+        [int]$CustomDLLs = 0
     )
     
     try {
@@ -211,6 +211,7 @@ function Test-IsLikelyTarget {
 
 # Main scanning function
 function Start-DLLSideloadingScan {
+    [CmdletBinding()]
     param (
         [ValidateSet("Full", "Medium", "Strict", "Custom")]
         [string]$ScanType = "Full",
@@ -320,7 +321,7 @@ function Start-DLLSideloadingScan {
                     }
                 }
                 catch {
-                    Write-Host "Error processing DLL $dllName: $_" -ForegroundColor Red
+                    Write-Host "Error processing DLL $dllName`: $_" -ForegroundColor Red
                     continue
                 }
             }
@@ -354,6 +355,7 @@ function Start-DLLSideloadingScan {
         Write-Host "`nNo potential DLL sideloading vulnerabilities found." -ForegroundColor Green
     }
 }
+
 # Prompt user for scan type
 Write-Host "`nSelect scan type:" -ForegroundColor Cyan
 Write-Host "1: Full Scan (All Applications)" -ForegroundColor Green
