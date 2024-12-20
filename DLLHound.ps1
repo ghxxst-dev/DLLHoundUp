@@ -29,20 +29,67 @@ $COMMON_SYSTEM_DLLS = @(
     'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
 )
 
-# Function to get loaded DLLs for a process
-function Get-LoadedDLLs {
+# Function to check DLL load paths
+function Get-DLLSearchOrder {
     param (
-        [System.Diagnostics.Process]$Process
+        [string]$ProcessPath,
+        [string]$DLLName
     )
-    try {
-        return $Process.Modules | Where-Object {
-            $_.ModuleName.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)
-        } | Select-Object -ExpandProperty ModuleName
+    
+    $searchPaths = @()
+    $processDir = Split-Path -Parent $ProcessPath
+    
+    # Windows DLL Search Order:
+    # 1. The directory from which the application loaded
+    $searchPaths += @{
+        Priority = 1
+        Path = Join-Path $processDir $DLLName
+        Description = "Application Directory"
     }
-    catch {
-        Write-Verbose "Error getting loaded DLLs: $_"
-        return @()
+    
+    # 2. System directory (System32)
+    $searchPaths += @{
+        Priority = 2
+        Path = Join-Path $env:SystemRoot "System32\$DLLName"
+        Description = "System32 Directory"
     }
+    
+    # 3. 16-bit system directory (System)
+    $searchPaths += @{
+        Priority = 3
+        Path = Join-Path $env:SystemRoot "System\$DLLName"
+        Description = "16-bit System Directory"
+    }
+    
+    # 4. Windows directory
+    $searchPaths += @{
+        Priority = 4
+        Path = Join-Path $env:SystemRoot $DLLName
+        Description = "Windows Directory"
+    }
+    
+    # 5. Current working directory
+    $searchPaths += @{
+        Priority = 5
+        Path = Join-Path (Get-Location) $DLLName
+        Description = "Current Directory"
+    }
+    
+    # 6. PATH environment variable directories
+    $envPaths = $env:PATH -split ';'
+    $priority = 6
+    foreach ($path in $envPaths) {
+        if (![string]::IsNullOrWhiteSpace($path)) {
+            $searchPaths += @{
+                Priority = $priority
+                Path = Join-Path $path $DLLName
+                Description = "PATH: $path"
+            }
+            $priority++
+        }
+    }
+    
+    return $searchPaths
 }
 
 # Function to get imported DLLs from PE header
@@ -190,16 +237,23 @@ function Start-DLLSideloadingScan {
                 }
             }
 
-            Write-Host "Scanning process: $($process.ProcessName)" -ForegroundColor Yellow
+            Write-Host "`nAnalyzing process: $($process.ProcessName) (PID: $($process.Id))" -ForegroundColor Cyan
             
             # Get process path and DLL information
             $processPath = $process.MainModule.FileName
+            Write-Host "Process path: $processPath" -ForegroundColor DarkGray
             
             # Get list of imported DLLs from PE header
+            Write-Host "Analyzing PE imports..." -ForegroundColor DarkGray
             $importedDLLs = Get-ImportedDLLs -FilePath $processPath
             
             # Get list of actually loaded DLLs
-            $loadedDLLs = Get-LoadedDLLs -Process $process
+            Write-Host "Getting loaded modules..." -ForegroundColor DarkGray
+            $loadedDLLs = $process.Modules | Where-Object {
+                $_.ModuleName.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)
+            } | Select-Object -ExpandProperty ModuleName
+            
+            Write-Host "Found $($importedDLLs.Count) imported DLLs, $($loadedDLLs.Count) loaded DLLs" -ForegroundColor DarkGray
             
             # Find missing DLLs (imported but not loaded)
             $missingDLLs = $importedDLLs | Where-Object { $loadedDLLs -notcontains $_ }
@@ -208,22 +262,42 @@ function Start-DLLSideloadingScan {
                 try {
                     # Skip common system DLLs in targeted modes
                     if ($ScanType -ne "Full" -and ($COMMON_SYSTEM_DLLS -contains $dllName.ToLower())) {
+                        Write-Host "Skipping system DLL: $dllName" -ForegroundColor DarkGray
                         continue
                     }
                     
-                    $results += [PSCustomObject]@{
-                        ProcessName = $process.ProcessName
-                        ProcessPath = $processPath
-                        ProcessSize = (Get-Item $processPath).Length
-                        DLLCount = $loadedDLLs.Count
-                        MissingDLL = $dllName
-                        ImportedDLLCount = $importedDLLs.Count
-                        LoadedDLLCount = $loadedDLLs.Count
-                        ScanType = $ScanType
+                    Write-Host "`nChecking missing DLL: $dllName" -ForegroundColor Yellow
+                    
+                    # Get all possible load paths
+                    $searchPaths = Get-DLLSearchOrder -ProcessPath $processPath -DLLName $dllName
+                    
+                    foreach ($searchPath in $searchPaths) {
+                        Write-Host "Checking path [$($searchPath.Priority)]: $($searchPath.Path)" -ForegroundColor DarkGray
+                        
+                        if (Test-Path $searchPath.Path) {
+                            Write-Host "  Found at: $($searchPath.Path)" -ForegroundColor DarkGray
+                        } else {
+                            Write-Host "  Not found - potential DLL hijacking point" -ForegroundColor Red
+                            
+                            $results += [PSCustomObject]@{
+                                ProcessName = $process.ProcessName
+                                ProcessId = $process.Id
+                                ProcessPath = $processPath
+                                ProcessSize = (Get-Item $processPath).Length
+                                DLLCount = $loadedDLLs.Count
+                                MissingDLL = $dllName
+                                SearchPath = $searchPath.Path
+                                SearchPriority = $searchPath.Priority
+                                SearchLocation = $searchPath.Description
+                                ImportedDLLCount = $importedDLLs.Count
+                                LoadedDLLCount = $loadedDLLs.Count
+                                ScanType = $ScanType
+                            }
+                        }
                     }
                 }
                 catch {
-                    Write-Host "Error processing DLL $dllName: $_" -ForegroundColor Red
+                    Write-Host "Error processing DLL $dllName`: $_" -ForegroundColor Red
                     continue
                 }
                         }
