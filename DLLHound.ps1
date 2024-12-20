@@ -94,6 +94,7 @@ function Start-DLLSideloadingScan {
                 $results += [PSCustomObject]@{
                     ProcessName = $process.ProcessName
                     ProcessId = $process.Id
+                    ProcessPath = $processPath
                     MissingDLL = $dll
                 }
             }
@@ -104,7 +105,7 @@ function Start-DLLSideloadingScan {
 
     if ($results.Count -gt 0) {
         Write-Host "Found DLL sideloading issues:" -ForegroundColor Yellow
-        $results | Format-Table -AutoSize
+        $results | Format-Table ProcessName, ProcessId, ProcessPath, MissingDLL -AutoSize
     } else {
         Write-Host "No DLL sideloading issues found." -ForegroundColor Green
     }
