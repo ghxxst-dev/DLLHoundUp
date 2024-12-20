@@ -322,29 +322,39 @@ function Start-DLLSideloadingScan {
         }
     }
 
-    # Output results
+     # Output results
     if ($results.Count -gt 0) {
-        Write-Host "`nVulnerable Programs:" -ForegroundColor Yellow
-        $results | ForEach-Object {
-            Write-Host "`nProgram: " -NoNewline -ForegroundColor Green
-            Write-Host $_.ProcessName
-            Write-Host "Path: " -NoNewline -ForegroundColor Green
-            Write-Host $_.ProcessPath
-            Write-Host "Missing DLL: " -NoNewline -ForegroundColor Green
-            Write-Host $_.MissingDLL
-            Write-Host "---"
-        }
+        # Filter results for exe files only
+        $exeResults = $results | Where-Object { $_.ProcessPath -like '*.exe' }
         
-        # Export results to CSV
-        $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
-        $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$($ScanType)_$($scanTime).csv"
-        $results | Export-Csv -Path $exportPath -NoTypeInformation
-        Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
+        if ($exeResults.Count -gt 0) {
+            Write-Host "`nVulnerable Programs:" -ForegroundColor Yellow
+            $exeResults | ForEach-Object {
+                Write-Host "`nProgram: " -NoNewline -ForegroundColor Green
+                Write-Host $_.ProcessName
+                Write-Host "Path: " -NoNewline -ForegroundColor Green
+                Write-Host $_.ProcessPath
+                Write-Host "Missing DLL: " -NoNewline -ForegroundColor Green
+                Write-Host $_.MissingDLL
+                Write-Host "Search Path: " -NoNewline -ForegroundColor Green
+                Write-Host $_.SearchPath
+                Write-Host "---"
+            }
+            
+            # Export results to CSV
+            $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
+            $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$($ScanType)_$($scanTime).csv"
+            $exeResults | Export-Csv -Path $exportPath -NoTypeInformation
+            Write-Host "`nResults exported to: $exportPath" -ForegroundColor Green
+            Write-Host ("Found {0} vulnerable executables with potentially missing DLLs." -f $exeResults.Count) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "`nNo vulnerable executables found after filtering." -ForegroundColor Yellow
+        }
     }
     else {
         Write-Host "`nNo potential DLL sideloading vulnerabilities found." -ForegroundColor Green
     }
-}
 
 # Prompt user for scan type
 Write-Host "`nSelect scan type:" -ForegroundColor Cyan
