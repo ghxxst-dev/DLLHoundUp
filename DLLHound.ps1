@@ -1,6 +1,3 @@
-# Enhanced DLL Sideloading Scanner - Spartacus-style
-# Scans processes for missing or unresolved DLLs using dynamic analysis
-
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
@@ -112,12 +109,10 @@ function Start-DLLSideloadingScan {
         }
     }
 
-    # Output results
+    # Output results in table format
     if ($results.Count -gt 0) {
         Write-Host "[INFO] Missing DLLs detected:" -ForegroundColor Yellow
-        $results | ForEach-Object {
-            Write-Host "DLL Not Found: $($_.MissingDLL), Affected Executable: $($_.ProcessPath)" -ForegroundColor Red
-        }
+        $results | Format-Table -Property ProcessName, ProcessId, MissingDLL, ProcessPath -AutoSize
 
         # CSV Export Option
         $exportChoice = Read-Host "Do you want to export results to CSV? (y/n)"
