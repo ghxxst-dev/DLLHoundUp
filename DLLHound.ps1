@@ -2,6 +2,7 @@
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
+# ASCII art title
 Write-Host @"
  _____  _      _      _    _                       _ 
 |  __ \| |    | |    | |  | |                     | |
@@ -64,6 +65,17 @@ function Get-DLLSearchPaths {
     $paths += ($env:Path -split ';' | ForEach-Object { Join-Path $_ $DLLName })
 
     return $paths
+}
+
+# Function to check DLL existence
+function Test-DLLExists {
+    param ([string]$DLLPath)
+    try {
+        return Test-Path $DLLPath
+    } catch {
+        Write-Host "[ERROR] Unable to check DLL existence: $DLLPath - $_" -ForegroundColor Red
+        return $false
+    }
 }
 
 # Function to open affected executable
