@@ -1,10 +1,7 @@
-# Enhanced DLL Sideloading Scanner
-# Scans processes for missing or unresolved DLLs using dynamic analysis
 
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
-# ASCII art title
 Write-Host @"
  _____  _      _      _    _                       _ 
 |  __ \| |    | |    | |  | |                     | |
@@ -25,6 +22,20 @@ $STANDARD_WINDOWS_PROCESSES = @(
     'services.exe', 'winlogon.exe', 'taskhostw.exe', 'spoolsv.exe', 'dwm.exe'
 )
 
+# Customizable Search Paths
+$CustomSearchPaths = @()
+
+# Add Custom Search Paths
+function Add-CustomSearchPath {
+    param ([string]$Path)
+    if (Test-Path $Path) {
+        $CustomSearchPaths += $Path
+        Write-Host "[INFO] Added custom search path: $Path" -ForegroundColor Green
+    } else {
+        Write-Host "[ERROR] Invalid path: $Path" -ForegroundColor Red
+    }
+}
+
 # Simulate DLL Search Order
 function Get-DLLSearchPaths {
     param (
@@ -37,35 +48,62 @@ function Get-DLLSearchPaths {
     # 1. Application directory
     $paths += Join-Path $processDir $DLLName
 
-    # 2. System32
+    # 2. Custom search paths
+    $CustomSearchPaths | ForEach-Object { $paths += Join-Path $_ $DLLName }
+
+    # 3. System32
     $paths += Join-Path $env:SystemRoot "System32\$DLLName"
 
-    # 3. Windows Directory
+    # 4. Windows Directory
     $paths += Join-Path $env:SystemRoot $DLLName
 
-    # 4. Current directory
+    # 5. Current directory
     $paths += Join-Path (Get-Location) $DLLName
 
-    # 5. PATH environment variable directories
+    # 6. PATH environment variable directories
     $paths += ($env:Path -split ';' | ForEach-Object { Join-Path $_ $DLLName })
 
     return $paths
 }
 
-# Function to check DLL existence
-function Test-DLLExists {
-    param ([string]$DLLPath)
-    return Test-Path $DLLPath
+# Function to open affected executable
+function Open-ExecutablePath {
+    param ([string]$ExecutablePath)
+    if (Test-Path $ExecutablePath) {
+        Write-Host "[INFO] Opening directory for: $ExecutablePath" -ForegroundColor Cyan
+        Invoke-Item (Split-Path -Parent $ExecutablePath)
+    } else {
+        Write-Host "[ERROR] Cannot open directory. File does not exist: $ExecutablePath" -ForegroundColor Red
+    }
 }
 
 # Function to analyze a process
 function Analyze-Process {
-    param ([System.Diagnostics.Process]$Process)
+    param (
+        [System.Diagnostics.Process]$Process,
+        [int64]$MaxSize = 0,
+        [int]$MaxDLLs = 0,
+        [switch]$CustomMode
+    )
     Write-Host "[INFO] Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -ForegroundColor Cyan
     try {
         $processPath = $Process.MainModule.FileName
-        $modules = $Process.Modules | Where-Object { $_.ModuleName -match '\.dll$' }
+        $size = (Get-Item $processPath).Length
+        $dllCount = $Process.Modules.Count
 
+        # Custom size and dependency filtering
+        if ($CustomMode) {
+            if ($MaxSize -gt 0 -and $size -gt ($MaxSize * 1MB)) {
+                Write-Host "[SKIP] Process exceeds size limit ($size bytes > $($MaxSize * 1MB) bytes)." -ForegroundColor Yellow
+                return @()
+            }
+            if ($MaxDLLs -gt 0 -and $dllCount -gt $MaxDLLs) {
+                Write-Host "[SKIP] Process exceeds DLL dependency limit ($dllCount > $MaxDLLs)." -ForegroundColor Yellow
+                return @()
+            }
+        }
+
+        $modules = $Process.Modules | Where-Object { $_.ModuleName -match '\.dll$' }
         $missingDLLs = @()
 
         foreach ($module in $modules) {
@@ -93,13 +131,21 @@ function Analyze-Process {
 
 # Main scanning function
 function Start-DLLSideloadingScan {
-    Write-Host "[INFO] Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
-    $results = @()
+    param (
+        [switch]$CustomMode,
+        [int64]$MaxSize = 0,
+        [int]$MaxDLLs = 0
+    )
 
-    # Enumerate all processes
+    Write-Host "[INFO] Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
+    if ($CustomMode) {
+        Write-Host "[INFO] Custom Mode Enabled: Max Size = $MaxSize MB, Max DLLs = $MaxDLLs" -ForegroundColor Cyan
+    }
+
+    $results = @()
     $processes = Get-Process | Where-Object { $_.MainModule -and $STANDARD_WINDOWS_PROCESSES -notcontains $_.ProcessName }
     foreach ($process in $processes) {
-        $missingDLLs = Analyze-Process -Process $process
+        $missingDLLs = Analyze-Process -Process $process -MaxSize $MaxSize -MaxDLLs $MaxDLLs -CustomMode:$CustomMode
         if ($missingDLLs.Count -gt 0) {
             foreach ($dll in $missingDLLs) {
                 $results += [PSCustomObject]@{
@@ -125,10 +171,36 @@ function Start-DLLSideloadingScan {
             $results | Export-Csv -Path $exportPath -NoTypeInformation
             Write-Host "[INFO] Results exported to: $exportPath" -ForegroundColor Green
         }
+
+        # Open Executable Option
+        $openChoice = Read-Host "Do you want to open the directory of an affected executable? Enter the process name or 'n' to skip."
+        if ($openChoice -ne 'n') {
+            $selectedProcess = $results | Where-Object { $_.ProcessName -eq $openChoice }
+            if ($selectedProcess) {
+                Open-ExecutablePath -ExecutablePath $selectedProcess.ProcessPath
+            } else {
+                Write-Host "[ERROR] Process not found in the results." -ForegroundColor Red
+            }
+        }
     } else {
         Write-Host "[INFO] No missing DLLs detected." -ForegroundColor Green
     }
 }
 
-# Start the scan
-Start-DLLSideloadingScan
+# Add Custom Search Paths Option
+Write-Host "Do you want to add custom DLL search paths? (Enter paths or 'n' to skip)" -ForegroundColor Cyan
+while ($true) {
+    $customPath = Read-Host "Enter a custom search path (or 'done' to finish)"
+    if ($customPath -eq 'n' -or $customPath -eq 'done') { break }
+    Add-CustomSearchPath -Path $customPath
+}
+
+# Prompt for Custom Scan
+$enableCustomScan = Read-Host "Do you want to enable a custom scan? (y/n)"
+if ($enableCustomScan -eq "y") {
+    $maxSize = [int64](Read-Host "Enter maximum executable size in MB (e.g., 100 for 100MB)")
+    $maxDLLs = [int](Read-Host "Enter maximum number of DLL dependencies (e.g., 50)")
+    Start-DLLSideloadingScan -CustomMode -MaxSize $maxSize -MaxDLLs $maxDLLs
+} else {
+    Start-DLLSideloadingScan
+}
