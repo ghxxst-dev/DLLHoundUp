@@ -1,5 +1,3 @@
-# Enhanced DLL Sideloading Scanner
-
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
@@ -23,6 +21,9 @@ $STANDARD_WINDOWS_PROCESSES = @(
     'explorer.exe', 'svchost.exe', 'lsass.exe', 'csrss.exe', 'wininit.exe',
     'services.exe', 'winlogon.exe', 'taskhostw.exe', 'spoolsv.exe', 'dwm.exe'
 )
+
+# Debug Mode Flag
+$DebugMode = $false
 
 # Customizable Search Paths
 $CustomSearchPaths = @()
@@ -84,12 +85,16 @@ function Test-DLLExists {
     param ([string]$DLLPath)
     try {
         if ([string]::IsNullOrWhiteSpace($DLLPath)) {
-            Write-Host "[DEBUG] Received an empty or invalid DLL path." -ForegroundColor Yellow
+            if ($DebugMode) {
+                Write-Host "[DEBUG] Received an empty or invalid DLL path." -ForegroundColor Yellow
+            }
             return $false
         }
 
         # Debugging Log
-        Write-Host "[DEBUG] Checking DLL Path: $DLLPath" -ForegroundColor DarkGray
+        if ($DebugMode) {
+            Write-Host "[DEBUG] Checking DLL Path: $DLLPath" -ForegroundColor DarkGray
+        }
 
         return [System.IO.File]::Exists($DLLPath)
     } catch {
@@ -115,9 +120,11 @@ function Analyze-Process {
                 $dllPaths = Get-DLLSearchPaths -ProcessPath $processPath -DLLName $dllName
 
                 # Debugging Log: Log all generated paths
-                Write-Host "[DEBUG] DLL Search Paths for `${dllName}`:" -ForegroundColor DarkGray
-                foreach ($path in $dllPaths) {
-                    Write-Host "  $path" -ForegroundColor DarkGray
+                if ($DebugMode) {
+                    Write-Host "[DEBUG] DLL Search Paths for `${dllName}`:" -ForegroundColor DarkGray
+                    foreach ($path in $dllPaths) {
+                        Write-Host "  $path" -ForegroundColor DarkGray
+                    }
                 }
 
                 # Filter out empty or invalid paths before testing
@@ -144,6 +151,9 @@ function Analyze-Process {
 # Main scanning function
 function Start-DLLSideloadingScan {
     Write-Host "[INFO] Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
+    if ($DebugMode) {
+        Write-Host "[INFO] Debug Mode is ENABLED. Verbose output will be displayed." -ForegroundColor Yellow
+    }
 
     $results = @()
     $processes = Get-Process | Where-Object { $_.MainModule -and $STANDARD_WINDOWS_PROCESSES -notcontains $_.ProcessName }
@@ -185,6 +195,12 @@ while ($true) {
     $customPath = Read-Host "Enter a custom search path (or 'done' to finish)"
     if ($customPath -eq 'n' -or $customPath -eq 'done') { break }
     Add-CustomSearchPath -Path $customPath
+}
+
+# Enable Debug Mode
+$debugChoice = Read-Host "Do you want to enable Debug Mode? (y/n)"
+if ($debugChoice -eq "y") {
+    $DebugMode = $true
 }
 
 # Start the scan
