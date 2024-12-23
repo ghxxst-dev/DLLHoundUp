@@ -174,7 +174,7 @@ function Start-DLLScan {
     # Display results
     if ($results.Count -gt 0) {
         Write-LogMessage "Found $($results.Count) potential DLL sideloading vulnerabilities:" -Type "INFO" -Color Green
-        $results | Format-Table -AutoSize
+        $results | Select-Object MissingDLL, ProcessPath | Format-Table -AutoSize -Wrap
         
         # Export option
         $exportChoice = Read-Host "Export results to CSV? (y/n)"
