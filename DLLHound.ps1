@@ -1,4 +1,4 @@
-# Enhanced DLL Sideloading Scanner - Fully Debugged
+# Enhanced DLL Sideloading Scanner 
 
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
@@ -115,7 +115,7 @@ function Analyze-Process {
                 $dllPaths = Get-DLLSearchPaths -ProcessPath $processPath -DLLName $dllName
 
                 # Debugging Log: Log all generated paths
-                Write-Host "[DEBUG] DLL Search Paths for $dllName:" -ForegroundColor DarkGray
+                Write-Host "[DEBUG] DLL Search Paths for `${dllName}`:" -ForegroundColor DarkGray
                 foreach ($path in $dllPaths) {
                     Write-Host "  $path" -ForegroundColor DarkGray
                 }
@@ -126,11 +126,11 @@ function Analyze-Process {
                 # Check if the DLL exists in any search path
                 $found = $validPaths | Where-Object { Test-DLLExists $_ }
                 if (-not $found) {
-                    Write-Host "[MISSING] DLL Not Found: $dllName, Affected Executable: $processPath" -ForegroundColor Red
+                    Write-Host "[MISSING] DLL Not Found: `${dllName}`, Affected Executable: $processPath" -ForegroundColor Red
                     $missingDLLs += $dllName
                 }
             } catch {
-                Write-Host "[ERROR] Error analyzing module $($module.ModuleName): $_" -ForegroundColor Yellow
+                Write-Host "[ERROR] Error analyzing module `${dllName}`: $_" -ForegroundColor Yellow
             }
         }
 
