@@ -4,16 +4,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory = $false)]
-    [switch]$Debug,
-    
-    [Parameter(Mandatory = $false)]
-    [string[]]$CustomPaths,
-    
-    [Parameter(Mandatory = $false)]
-    [string]$OutputPath,
-    
-    [Parameter(Mandatory = $false)]
-    [switch]$ExportCsv
+    [switch]$Debug
 )
 
 # ASCII art title
@@ -28,102 +19,96 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 # Configuration
-$COMMON_SYSTEM_DLLS = @(
+$script:CommonSystemDlls = @(
     'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
     'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
 )
 
-$STANDARD_WINDOWS_PROCESSES = @(
+$script:StandardWindowsProcesses = @(
     'explorer.exe', 'svchost.exe', 'lsass.exe', 'csrss.exe', 'wininit.exe',
     'services.exe', 'winlogon.exe', 'taskhostw.exe', 'spoolsv.exe', 'dwm.exe'
 )
 
+$script:CustomSearchPaths = @()
+
 # Logging functions
-function Write-DebugLog {
+function Write-DebugMessage {
     param([string]$Message)
     if ($Debug) {
         Write-Host "[DEBUG] $Message" -ForegroundColor DarkGray
     }
 }
 
-function Write-InfoLog {
+function Write-InfoMessage {
     param([string]$Message)
     Write-Host "[INFO] $Message" -ForegroundColor Green
 }
 
-function Write-WarningLog {
-    param([string]$Message)
-    Write-Host "[WARNING] $Message" -ForegroundColor Yellow
-}
-
-function Write-ErrorLog {
+function Write-ErrorMessage {
     param([string]$Message)
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
-function Write-MissingLog {
+function Write-MissingMessage {
     param([string]$Message)
     Write-Host "[MISSING] $Message" -ForegroundColor Red
 }
 
+# Add custom search paths
+function Add-CustomSearchPath {
+    param([string]$Path)
+    
+    if (Test-Path $Path) {
+        $script:CustomSearchPaths += $Path
+        Write-InfoMessage "Added custom search path: $Path"
+    } else {
+        Write-ErrorMessage "Invalid path: $Path"
+    }
+}
+
 # Get DLL search paths
 function Get-DllSearchPaths {
-    param (
+    param(
         [string]$ProcessPath,
         [string]$DllName
     )
     
-    $paths = [System.Collections.ArrayList]::new()
+    $searchPaths = @()
     $processDir = Split-Path -Parent $ProcessPath
     
-    if (![string]::IsNullOrWhiteSpace($processDir)) {
-        $null = $paths.Add((Join-Path $processDir $DllName))
+    # 1. Process directory
+    if ($processDir) {
+        $searchPaths += Join-Path $processDir $DllName
     }
     
-    foreach ($path in $CustomPaths) {
-        if (![string]::IsNullOrWhiteSpace($path)) {
-            $null = $paths.Add((Join-Path $path $DllName))
+    # 2. Custom search paths
+    foreach ($path in $script:CustomSearchPaths) {
+        $searchPaths += Join-Path $path $DllName
+    }
+    
+    # 3. System directories
+    $searchPaths += Join-Path $env:SystemRoot "System32\$DllName"
+    $searchPaths += Join-Path $env:SystemRoot $DllName
+    
+    # 4. Current directory
+    $searchPaths += Join-Path (Get-Location) $DllName
+    
+    # 5. PATH directories
+    $env:Path -split ';' | ForEach-Object {
+        if ($_) {
+            $searchPaths += Join-Path $_ $DllName
         }
     }
     
-    $null = $paths.Add((Join-Path $env:SystemRoot "System32\$DllName"))
-    $null = $paths.Add((Join-Path $env:SystemRoot $DllName))
-    $null = $paths.Add((Join-Path (Get-Location) $DllName))
-    
-    foreach ($path in ($env:Path -split ';')) {
-        if (![string]::IsNullOrWhiteSpace($path)) {
-            $null = $paths.Add((Join-Path $path $DllName))
-        }
-    }
-    
-    return $paths.ToArray()
+    return $searchPaths
 }
 
-# Test if DLL exists
-function Test-DllExists {
-    param([string]$DllPath)
-    
-    try {
-        if ([string]::IsNullOrWhiteSpace($DllPath)) {
-            Write-DebugLog "Received empty or invalid DLL path."
-            return $false
-        }
-        
-        Write-DebugLog "Checking DLL Path: $DllPath"
-        return [System.IO.File]::Exists($DllPath)
-    }
-    catch {
-        Write-ErrorLog "Unable to check DLL existence: $DllPath - $($_.Exception.Message)"
-        return $false
-    }
-}
-
-# Analyze a single process
+# Process analysis function
 function Analyze-Process {
     param([System.Diagnostics.Process]$Process)
     
-    Write-DebugLog "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))"
-    $results = [System.Collections.ArrayList]::new()
+    $results = @()
+    Write-DebugMessage "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))"
     
     try {
         $processPath = $Process.MainModule.FileName
@@ -132,82 +117,84 @@ function Analyze-Process {
         foreach ($module in $modules) {
             try {
                 $dllName = $module.ModuleName
-                $dllPaths = Get-DllSearchPaths -ProcessPath $processPath -DllName $dllName
+                $searchPaths = Get-DllSearchPaths -ProcessPath $processPath -DllName $dllName
                 
                 if ($Debug) {
-                    Write-DebugLog "DLL Search Paths for $dllName"
-                    $dllPaths | ForEach-Object { Write-DebugLog "  $_" }
+                    Write-DebugMessage "Checking paths for $dllName"
+                    $searchPaths | ForEach-Object { Write-DebugMessage "  $_" }
                 }
                 
                 $found = $false
-                foreach ($path in $dllPaths) {
-                    if (Test-DllExists -DllPath $path) {
+                foreach ($path in $searchPaths) {
+                    if (Test-Path $path -ErrorAction SilentlyContinue) {
                         $found = $true
                         break
                     }
                 }
                 
                 if (-not $found) {
-                    Write-MissingLog "DLL Not Found: $dllName, Affected Executable: $processPath"
-                    $null = $results.Add([PSCustomObject]@{
+                    Write-MissingMessage "DLL Not Found: $dllName (Process: $($Process.ProcessName))"
+                    $results += [PSCustomObject]@{
                         ProcessName = $Process.ProcessName
                         ProcessId = $Process.Id
                         ProcessPath = $processPath
                         MissingDLL = $dllName
-                        SearchedPaths = $dllPaths
-                    })
+                        SearchedPaths = $searchPaths -join ';'
+                    }
                 }
-            }
-            catch {
-                Write-WarningLog "Error analyzing module $dllName`: $($_.Exception.Message)"
+            } catch {
+                Write-ErrorMessage "Error analyzing module $($module.ModuleName): $($_.Exception.Message)"
             }
         }
-    }
-    catch {
-        Write-ErrorLog "Unable to analyze process $($Process.ProcessName): $($_.Exception.Message)"
+    } catch {
+        Write-ErrorMessage "Error accessing process $($Process.ProcessName): $($_.Exception.Message)"
     }
     
-    return $results.ToArray()
+    return $results
 }
 
 # Main scanning function
-function Start-DllSideloadingScan {
-    Write-InfoLog "Starting DLL sideloading vulnerability scan..."
+function Start-DLLScan {
+    Write-InfoMessage "Starting DLL sideloading vulnerability scan..."
     
-    if ($Debug) {
-        Write-DebugLog "Debug Mode is ENABLED. Verbose output will be displayed."
+    # Get custom search paths
+    Write-Host "`nEnter custom search paths (press Enter without input to continue):"
+    while ($true) {
+        $path = Read-Host "Enter path"
+        if ([string]::IsNullOrWhiteSpace($path)) { break }
+        Add-CustomSearchPath $path
     }
     
-    $results = [System.Collections.ArrayList]::new()
+    # Scan processes
+    $results = @()
     $processes = Get-Process | Where-Object { 
-        $_.MainModule -and $STANDARD_WINDOWS_PROCESSES -notcontains $_.ProcessName 
+        $_.MainModule -and ($script:StandardWindowsProcesses -notcontains $_.ProcessName) 
     }
     
     foreach ($process in $processes) {
         $processResults = Analyze-Process -Process $process
-        if ($processResults.Count -gt 0) {
-            $null = $results.AddRange($processResults)
+        if ($processResults) {
+            $results += $processResults
         }
     }
     
+    # Display results
     if ($results.Count -gt 0) {
-        Write-InfoLog "Missing DLLs detected:"
-        $results | Format-Table -Property ProcessName, ProcessId, MissingDLL, ProcessPath -AutoSize
+        Write-InfoMessage "Found $($results.Count) potential DLL sideloading vulnerabilities:"
+        $results | Format-Table -AutoSize
         
-        if ($ExportCsv) {
-            $csvPath = $OutputPath
-            if ([string]::IsNullOrWhiteSpace($csvPath)) {
-                $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
-                $csvPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$scanTime.csv"
-            }
+        # Export option
+        $exportChoice = Read-Host "Export results to CSV? (y/n)"
+        if ($exportChoice -eq 'y') {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $csvPath = Join-Path $env:USERPROFILE "Desktop\DLLScan_$timestamp.csv"
             $results | Export-Csv -Path $csvPath -NoTypeInformation
-            Write-InfoLog "Results exported to: $csvPath"
+            Write-InfoMessage "Results exported to: $csvPath"
         }
-    }
-    else {
-        Write-InfoLog "No missing DLLs detected."
+    } else {
+        Write-InfoMessage "No DLL sideloading vulnerabilities detected."
     }
 }
 
 # Start the scan
-Start-DllSideloadingScan
+Start-DLLScan
