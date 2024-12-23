@@ -1,4 +1,3 @@
-# Enhanced DLL Sideloading Scanner 
 
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
