@@ -1,3 +1,5 @@
+# Enhanced DLL Sideloading Scanner
+
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
@@ -124,7 +126,7 @@ function Analyze-Process {
                 # Check if the DLL exists in any search path
                 $found = $validPaths | Where-Object { Test-DLLExists $_ }
                 if (-not $found) {
-                    Write-Host "[MISSING] DLL Not Found: `${dllName}`, Affected Executable: $processPath" -ForegroundColor Red
+                    Write-Host "[MISSING] DLL Not Found: `${dllName}`, Affected Executable: ${processPath}" -ForegroundColor Red
                     $missingDLLs += $dllName
                 }
             } catch {
