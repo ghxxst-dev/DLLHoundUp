@@ -1,6 +1,21 @@
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
+[CmdletBinding()]
+param (
+    [Parameter(Mandatory = $false)]
+    [switch]$Debug,
+    
+    [Parameter(Mandatory = $false)]
+    [string[]]$CustomPaths,
+    
+    [Parameter(Mandatory = $false)]
+    [string]$OutputPath,
+    
+    [Parameter(Mandatory = $false)]
+    [switch]$ExportCsv
+)
+
 # ASCII art title
 Write-Host @"
  _____  _      _      _    _                       _ 
@@ -13,195 +28,194 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 # Configuration
-$COMMON_SYSTEM_DLLS = @(
-    'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
-    'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
-)
-$STANDARD_WINDOWS_PROCESSES = @(
-    'explorer.exe', 'svchost.exe', 'lsass.exe', 'csrss.exe', 'wininit.exe',
-    'services.exe', 'winlogon.exe', 'taskhostw.exe', 'spoolsv.exe', 'dwm.exe'
-)
-
-# Debug Mode Flag
-$DebugMode = $false
-
-# Customizable Search Paths
-$CustomSearchPaths = @()
-
-# Add Custom Search Paths
-function Add-CustomSearchPath {
-    param ([string]$Path)
-    if (Test-Path $Path) {
-        $CustomSearchPaths += $Path
-        Write-Host "[INFO] Added custom search path: $Path" -ForegroundColor Green
-    } else {
-        Write-Host "[ERROR] Invalid path: $Path" -ForegroundColor Red
-    }
-}
-
-# Simulate DLL Search Order
-function Get-DLLSearchPaths {
-    param (
-        [string]$ProcessPath,
-        [string]$DLLName
+class ScanConfig {
+    [string[]]$CommonSystemDlls = @(
+        'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll', 'shell32.dll',
+        'ole32.dll', 'oleaut32.dll', 'ntdll.dll', 'msvcrt.dll', 'ws2_32.dll'
     )
-    $paths = @()
-    $processDir = Split-Path -Parent $ProcessPath
-
-    # 1. Application directory
-    if (![string]::IsNullOrWhiteSpace($processDir)) {
-        $paths += Join-Path $processDir $DLLName
+    
+    [string[]]$StandardWindowsProcesses = @(
+        'explorer.exe', 'svchost.exe', 'lsass.exe', 'csrss.exe', 'wininit.exe',
+        'services.exe', 'winlogon.exe', 'taskhostw.exe', 'spoolsv.exe', 'dwm.exe'
+    )
+    
+    [string[]]$CustomSearchPaths
+    [bool]$DebugMode
+    
+    ScanConfig([bool]$debug, [string[]]$customPaths) {
+        $this.DebugMode = $debug
+        $this.CustomSearchPaths = $customPaths
     }
-
-    # 2. Custom search paths
-    $CustomSearchPaths | ForEach-Object {
-        if (![string]::IsNullOrWhiteSpace($_)) {
-            $paths += Join-Path $_ $DLLName
-        }
-    }
-
-    # 3. System32
-    $paths += Join-Path $env:SystemRoot "System32\$DLLName"
-
-    # 4. Windows Directory
-    $paths += Join-Path $env:SystemRoot $DLLName
-
-    # 5. Current directory
-    $paths += Join-Path (Get-Location) $DLLName
-
-    # 6. PATH environment variable directories
-    $paths += ($env:Path -split ';' | ForEach-Object {
-        if (![string]::IsNullOrWhiteSpace($_)) {
-            Join-Path $_ $DLLName
-        }
-    })
-
-    # Filter out invalid or empty paths
-    return $paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 
-# Function to check DLL existence
-function Test-DLLExists {
-    param ([string]$DLLPath)
-    try {
-        if ([string]::IsNullOrWhiteSpace($DLLPath)) {
-            if ($DebugMode) {
-                Write-Host "[DEBUG] Received an empty or invalid DLL path." -ForegroundColor Yellow
+# Create logger class for consistent logging
+class Logger {
+    static [void] Debug([string]$message, [bool]$debugMode) {
+        if ($debugMode) {
+            Write-Host "[DEBUG] $message" -ForegroundColor DarkGray
+        }
+    }
+    
+    static [void] Info([string]$message) {
+        Write-Host "[INFO] $message" -ForegroundColor Green
+    }
+    
+    static [void] Warning([string]$message) {
+        Write-Host "[WARNING] $message" -ForegroundColor Yellow
+    }
+    
+    static [void] Error([string]$message) {
+        Write-Host "[ERROR] $message" -ForegroundColor Red
+    }
+    
+    static [void] Missing([string]$message) {
+        Write-Host "[MISSING] $message" -ForegroundColor Red
+    }
+}
+
+class DllScanner {
+    [ScanConfig]$Config
+    
+    DllScanner([ScanConfig]$config) {
+        $this.Config = $config
+    }
+    
+    [string[]] GetDllSearchPaths([string]$processPath, [string]$dllName) {
+        $paths = [System.Collections.ArrayList]::new()
+        $processDir = Split-Path -Parent $processPath
+        
+        # 1. Application directory
+        if (![string]::IsNullOrWhiteSpace($processDir)) {
+            $paths.Add((Join-Path $processDir $dllName)) | Out-Null
+        }
+        
+        # 2. Custom search paths
+        foreach ($path in $this.Config.CustomSearchPaths) {
+            if (![string]::IsNullOrWhiteSpace($path)) {
+                $paths.Add((Join-Path $path $dllName)) | Out-Null
             }
+        }
+        
+        # 3. System directories
+        $paths.Add((Join-Path $env:SystemRoot "System32\$dllName")) | Out-Null
+        $paths.Add((Join-Path $env:SystemRoot $dllName)) | Out-Null
+        $paths.Add((Join-Path (Get-Location) $dllName)) | Out-Null
+        
+        # 4. PATH environment variable directories
+        foreach ($path in ($env:Path -split ';')) {
+            if (![string]::IsNullOrWhiteSpace($path)) {
+                $paths.Add((Join-Path $path $dllName)) | Out-Null
+            }
+        }
+        
+        return $paths.ToArray()
+    }
+    
+    [bool] TestDllExists([string]$dllPath) {
+        try {
+            if ([string]::IsNullOrWhiteSpace($dllPath)) {
+                [Logger]::Debug("Received empty or invalid DLL path.", $this.Config.DebugMode)
+                return $false
+            }
+            
+            [Logger]::Debug("Checking DLL Path: $dllPath", $this.Config.DebugMode)
+            return [System.IO.File]::Exists($dllPath)
+        }
+        catch {
+            [Logger]::Error("Unable to check DLL existence: $dllPath - $_")
             return $false
         }
-
-        # Debugging Log
-        if ($DebugMode) {
-            Write-Host "[DEBUG] Checking DLL Path: $DLLPath" -ForegroundColor DarkGray
-        }
-
-        return [System.IO.File]::Exists($DLLPath)
-    } catch {
-        Write-Host "[ERROR] Unable to check DLL existence: $DLLPath - $_" -ForegroundColor Red
-        return $false
     }
-}
-
-# Function to analyze a process
-function Analyze-Process {
-    param (
-        [System.Diagnostics.Process]$Process
-    )
-    Write-Host "[INFO] Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -ForegroundColor Cyan
-    try {
-        $processPath = $Process.MainModule.FileName
-        $modules = $Process.Modules | Where-Object { $_.ModuleName -match '\.dll$' }
-        $missingDLLs = @()
-
-        foreach ($module in $modules) {
-            try {
-                $dllName = $module.ModuleName
-                $dllPaths = Get-DLLSearchPaths -ProcessPath $processPath -DLLName $dllName
-
-                # Debugging Log: Log all generated paths
-                if ($DebugMode) {
-                    Write-Host "[DEBUG] DLL Search Paths for `${dllName}`:" -ForegroundColor DarkGray
+    
+    [PSCustomObject[]] AnalyzeProcess([System.Diagnostics.Process]$process) {
+        [Logger]::Info("Analyzing process: $($process.ProcessName) (PID: $($process.Id))")
+        $results = [System.Collections.ArrayList]::new()
+        
+        try {
+            $processPath = $process.MainModule.FileName
+            $modules = $process.Modules | Where-Object { $_.ModuleName -match '\.dll$' }
+            
+            foreach ($module in $modules) {
+                try {
+                    $dllName = $module.ModuleName
+                    $dllPaths = $this.GetDllSearchPaths($processPath, $dllName)
+                    
+                    if ($this.Config.DebugMode) {
+                        [Logger]::Debug("DLL Search Paths for ${dllName}:", $true)
+                        $dllPaths | ForEach-Object { [Logger]::Debug("  $_", $true) }
+                    }
+                    
+                    $found = $false
                     foreach ($path in $dllPaths) {
-                        Write-Host "  $path" -ForegroundColor DarkGray
+                        if ($this.TestDllExists($path)) {
+                            $found = $true
+                            break
+                        }
+                    }
+                    
+                    if (-not $found) {
+                        [Logger]::Missing("DLL Not Found: ${dllName}, Affected Executable: ${processPath}")
+                        $results.Add([PSCustomObject]@{
+                            ProcessName = $process.ProcessName
+                            ProcessId = $process.Id
+                            ProcessPath = $processPath
+                            MissingDLL = $dllName
+                            SearchedPaths = $dllPaths
+                        }) | Out-Null
                     }
                 }
-
-                # Filter out empty or invalid paths before testing
-                $validPaths = $dllPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-
-                # Check if the DLL exists in any search path
-                $found = $validPaths | Where-Object { Test-DLLExists $_ }
-                if (-not $found) {
-                    Write-Host "[MISSING] DLL Not Found: `${dllName}`, Affected Executable: ${processPath}" -ForegroundColor Red
-                    $missingDLLs += $dllName
-                }
-            } catch {
-                Write-Host "[ERROR] Error analyzing module `${dllName}`: $_" -ForegroundColor Yellow
-            }
-        }
-
-        return $missingDLLs
-    } catch {
-        Write-Host "[ERROR] Unable to analyze process: $($Process.ProcessName): $_" -ForegroundColor Red
-        return @()
-    }
-}
-
-# Main scanning function
-function Start-DLLSideloadingScan {
-    Write-Host "[INFO] Starting DLL sideloading vulnerability scan..." -ForegroundColor Green
-    if ($DebugMode) {
-        Write-Host "[INFO] Debug Mode is ENABLED. Verbose output will be displayed." -ForegroundColor Yellow
-    }
-
-    $results = @()
-    $processes = Get-Process | Where-Object { $_.MainModule -and $STANDARD_WINDOWS_PROCESSES -notcontains $_.ProcessName }
-    foreach ($process in $processes) {
-        $missingDLLs = Analyze-Process -Process $process
-        if ($missingDLLs.Count -gt 0) {
-            foreach ($dll in $missingDLLs) {
-                $results += [PSCustomObject]@{
-                    ProcessName = $process.ProcessName
-                    ProcessId = $process.Id
-                    ProcessPath = $process.MainModule.FileName
-                    MissingDLL = $dll
+                catch {
+                    [Logger]::Warning("Error analyzing module ${dllName}: $_")
                 }
             }
         }
-    }
-
-    # Output results in table format
-    if ($results.Count -gt 0) {
-        Write-Host "[INFO] Missing DLLs detected:" -ForegroundColor Yellow
-        $results | Format-Table -Property ProcessName, ProcessId, MissingDLL, ProcessPath -AutoSize
-
-        # CSV Export Option
-        $exportChoice = Read-Host "Do you want to export results to CSV? (y/n)"
-        if ($exportChoice -eq "y") {
-            $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
-            $exportPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$scanTime.csv"
-            $results | Export-Csv -Path $exportPath -NoTypeInformation
-            Write-Host "[INFO] Results exported to: $exportPath" -ForegroundColor Green
+        catch {
+            [Logger]::Error("Unable to analyze process: $($process.ProcessName): $_")
         }
-    } else {
-        Write-Host "[INFO] No missing DLLs detected." -ForegroundColor Green
+        
+        return $results.ToArray()
+    }
+    
+    [void] StartScan([string]$outputPath, [bool]$exportCsv) {
+        [Logger]::Info("Starting DLL sideloading vulnerability scan...")
+        
+        if ($this.Config.DebugMode) {
+            [Logger]::Info("Debug Mode is ENABLED. Verbose output will be displayed.")
+        }
+        
+        $results = [System.Collections.ArrayList]::new()
+        $processes = Get-Process | Where-Object { 
+            $_.MainModule -and $this.Config.StandardWindowsProcesses -notcontains $_.ProcessName 
+        }
+        
+        foreach ($process in $processes) {
+            $processResults = $this.AnalyzeProcess($process)
+            if ($processResults.Count -gt 0) {
+                $results.AddRange($processResults)
+            }
+        }
+        
+        if ($results.Count -gt 0) {
+            [Logger]::Info("Missing DLLs detected:")
+            $results | Format-Table -Property ProcessName, ProcessId, MissingDLL, ProcessPath -AutoSize
+            
+            if ($exportCsv) {
+                $csvPath = $outputPath
+                if ([string]::IsNullOrWhiteSpace($csvPath)) {
+                    $scanTime = Get-Date -Format 'yyyyMMdd_HHmmss'
+                    $csvPath = Join-Path $env:USERPROFILE "Desktop\DLLSideloadingScan_$scanTime.csv"
+                }
+                $results | Export-Csv -Path $csvPath -NoTypeInformation
+                [Logger]::Info("Results exported to: $csvPath")
+            }
+        }
+        else {
+            [Logger]::Info("No missing DLLs detected.")
+        }
     }
 }
 
-# Add Custom Search Paths Option
-Write-Host "Do you want to add custom DLL search paths? (Enter paths or 'n' to skip)" -ForegroundColor Cyan
-while ($true) {
-    $customPath = Read-Host "Enter a custom search path (or 'done' to finish)"
-    if ($customPath -eq 'n' -or $customPath -eq 'done') { break }
-    Add-CustomSearchPath -Path $customPath
-}
-
-# Enable Debug Mode
-$debugChoice = Read-Host "Do you want to enable Debug Mode? (y/n)"
-if ($debugChoice -eq "y") {
-    $DebugMode = $true
-}
-
-# Start the scan
-Start-DLLSideloadingScan
+# Main execution
+$config = [ScanConfig]::new($Debug, $CustomPaths)
+$scanner = [DllScanner]::new($config)
+$scanner.StartScan($OutputPath, $ExportCsv)
