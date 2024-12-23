@@ -1,4 +1,4 @@
-# Enhanced DLL Sideloading Scanner - Fixed for Syntax Errors
+# Enhanced DLL Sideloading Scanner - Fully Debugged
 
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
