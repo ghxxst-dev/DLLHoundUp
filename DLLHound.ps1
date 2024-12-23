@@ -1,9 +1,8 @@
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
-param(
-    [switch]$ShowDebug
-)
+# Global debug flag
+$script:ShowDebug = $false
 
 # ASCII art title
 Write-Host @"
@@ -31,13 +30,12 @@ $script:CustomSearchPaths = @()
 
 function Write-LogMessage {
     param(
-        [Parameter(Mandatory=$true)]
         [string]$Message,
         [string]$Type = "INFO",
         [ConsoleColor]$Color = "White"
     )
     
-    if ($Type -eq "DEBUG" -and -not $ShowDebug) {
+    if ($Type -eq "DEBUG" -and -not $script:ShowDebug) {
         return
     }
     
@@ -105,7 +103,7 @@ function Analyze-Process {
                 $dllName = $module.ModuleName
                 $searchPaths = Get-DllSearchPaths -ProcessPath $processPath -DllName $dllName
                 
-                if ($ShowDebug) {
+                if ($script:ShowDebug) {
                     Write-LogMessage "Checking paths for $dllName" -Type "DEBUG" -Color DarkGray
                     $searchPaths | ForEach-Object { 
                         Write-LogMessage "  $_" -Type "DEBUG" -Color DarkGray 
@@ -143,6 +141,14 @@ function Analyze-Process {
 
 function Start-DLLScan {
     Write-LogMessage "Starting DLL sideloading vulnerability scan..." -Type "INFO" -Color Green
+    
+    # Enable/Disable Debug Mode
+    $debugChoice = Read-Host "Enable debug mode? (y/n)"
+    $script:ShowDebug = $debugChoice -eq 'y'
+    
+    if ($script:ShowDebug) {
+        Write-LogMessage "Debug mode enabled" -Type "INFO" -Color Yellow
+    }
     
     # Get custom search paths
     Write-Host "`nEnter custom search paths (press Enter without input to continue):"
