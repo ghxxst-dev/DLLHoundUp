@@ -154,7 +154,7 @@ class DllScanner {
                     }
                     
                     if (-not $found) {
-                        [Logger]::Missing("DLL Not Found: ${dllName}, Affected Executable: ${processPath}")
+                        [Logger]::Missing("DLL Not Found: $($dllName), Affected Executable: $($processPath)")
                         $results.Add([PSCustomObject]@{
                             ProcessName = $process.ProcessName
                             ProcessId = $process.Id
@@ -165,7 +165,7 @@ class DllScanner {
                     }
                 }
                 catch {
-                    [Logger]::Warning("Error analyzing module ${dllName}: $_")
+                    [Logger]::Warning("Error analyzing module $($dllName): $($_.Exception.Message)")
                 }
             }
         }
