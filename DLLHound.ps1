@@ -1,4 +1,4 @@
-# Enhanced DLL Sideloading Scanner
+# Enhanced DLL Sideloading Scanner - Fixed for Syntax Errors
 
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
@@ -11,7 +11,7 @@ Write-Host @"
 | |  | | |    | |    |  __  |/ _ \| | | | '_ \ / _  |
 | |__| | |____| |____| |  | | (_) | |_| | | | | (_| |
 |_____/|______|______|_|  |_|\___/ \__,_|_| |_|\__,_|
-                  by @ajm4n - Fixed Syntax Errors
+                 by @ajm4n
 "@ -ForegroundColor Cyan
 
 # Configuration
@@ -76,8 +76,7 @@ function Get-DLLSearchPaths {
     })
 
     # Filter out invalid or empty paths
-    $validPaths = $paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    return $validPaths
+    return $paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 
 # Function to check DLL existence
@@ -117,7 +116,9 @@ function Analyze-Process {
 
                 # Debugging Log: Log all generated paths
                 Write-Host "[DEBUG] DLL Search Paths for $dllName:" -ForegroundColor DarkGray
-                $dllPaths | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+                foreach ($path in $dllPaths) {
+                    Write-Host "  $path" -ForegroundColor DarkGray
+                }
 
                 # Filter out empty or invalid paths before testing
                 $validPaths = $dllPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
