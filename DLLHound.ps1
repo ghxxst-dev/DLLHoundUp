@@ -75,6 +75,7 @@ class Logger {
 
 class DllScanner {
     [ScanConfig]$Config
+    hidden [string]$ErrorMessage
     
     DllScanner([ScanConfig]$config) {
         $this.Config = $config
@@ -84,24 +85,20 @@ class DllScanner {
         $paths = [System.Collections.ArrayList]::new()
         $processDir = Split-Path -Parent $processPath
         
-        # 1. Application directory
         if (![string]::IsNullOrWhiteSpace($processDir)) {
             $paths.Add((Join-Path $processDir $dllName)) | Out-Null
         }
         
-        # 2. Custom search paths
         foreach ($path in $this.Config.CustomSearchPaths) {
             if (![string]::IsNullOrWhiteSpace($path)) {
                 $paths.Add((Join-Path $path $dllName)) | Out-Null
             }
         }
         
-        # 3. System directories
         $paths.Add((Join-Path $env:SystemRoot "System32\$dllName")) | Out-Null
         $paths.Add((Join-Path $env:SystemRoot $dllName)) | Out-Null
         $paths.Add((Join-Path (Get-Location) $dllName)) | Out-Null
         
-        # 4. PATH environment variable directories
         foreach ($path in ($env:Path -split ';')) {
             if (![string]::IsNullOrWhiteSpace($path)) {
                 $paths.Add((Join-Path $path $dllName)) | Out-Null
@@ -122,7 +119,8 @@ class DllScanner {
             return [System.IO.File]::Exists($dllPath)
         }
         catch {
-            [Logger]::Error("Unable to check DLL existence: $dllPath - $_")
+            $this.ErrorMessage = $_.Exception.Message
+            [Logger]::Error("Unable to check DLL existence: $dllPath - $($this.ErrorMessage)")
             return $false
         }
     }
@@ -141,7 +139,7 @@ class DllScanner {
                     $dllPaths = $this.GetDllSearchPaths($processPath, $dllName)
                     
                     if ($this.Config.DebugMode) {
-                        [Logger]::Debug("DLL Search Paths for ${dllName}:", $true)
+                        [Logger]::Debug("DLL Search Paths for $dllName:", $true)
                         $dllPaths | ForEach-Object { [Logger]::Debug("  $_", $true) }
                     }
                     
@@ -154,23 +152,25 @@ class DllScanner {
                     }
                     
                     if (-not $found) {
-                        [Logger]::Missing("DLL Not Found: $($dllName), Affected Executable: $($processPath)")
-                        $results.Add([PSCustomObject]@{
+                        [Logger]::Missing("DLL Not Found: $dllName, Affected Executable: $processPath")
+                        $null = $results.Add([PSCustomObject]@{
                             ProcessName = $process.ProcessName
                             ProcessId = $process.Id
                             ProcessPath = $processPath
                             MissingDLL = $dllName
                             SearchedPaths = $dllPaths
-                        }) | Out-Null
+                        })
                     }
                 }
                 catch {
-                    [Logger]::Warning("Error analyzing module $($dllName): $($_.Exception.Message)")
+                    $this.ErrorMessage = $_.Exception.Message
+                    [Logger]::Warning("Error analyzing module $dllName`: $($this.ErrorMessage)")
                 }
             }
         }
         catch {
-            [Logger]::Error("Unable to analyze process: $($process.ProcessName): $_")
+            $this.ErrorMessage = $_.Exception.Message
+            [Logger]::Error("Unable to analyze process $($process.ProcessName)`: $($this.ErrorMessage)")
         }
         
         return $results.ToArray()
