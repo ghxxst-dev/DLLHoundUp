@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory = $false)]
-    [switch]$Debug
+    [switch]$DebugMode
 )
 
 # ASCII art title
@@ -34,7 +34,7 @@ $script:CustomSearchPaths = @()
 # Logging functions
 function Write-DebugMessage {
     param([string]$Message)
-    if ($Debug) {
+    if ($DebugMode) {
         Write-Host "[DEBUG] $Message" -ForegroundColor DarkGray
     }
 }
@@ -119,7 +119,7 @@ function Analyze-Process {
                 $dllName = $module.ModuleName
                 $searchPaths = Get-DllSearchPaths -ProcessPath $processPath -DllName $dllName
                 
-                if ($Debug) {
+                if ($DebugMode) {
                     Write-DebugMessage "Checking paths for $dllName"
                     $searchPaths | ForEach-Object { Write-DebugMessage "  $_" }
                 }
