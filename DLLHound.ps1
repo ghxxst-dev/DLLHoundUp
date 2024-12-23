@@ -1,3 +1,5 @@
+# Enhanced DLL Sideloading Scanner
+
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
@@ -9,7 +11,7 @@ Write-Host @"
 | |  | | |    | |    |  __  |/ _ \| | | | '_ \ / _  |
 | |__| | |____| |____| |  | | (_) | |_| | | | | (_| |
 |_____/|______|______|_|  |_|\___/ \__,_|_| |_|\__,_|
-                  by @ajm4n - Debugging Variable Reference
+                  by @ajm4n - Fixed Syntax Errors
 "@ -ForegroundColor Cyan
 
 # Configuration
@@ -88,11 +90,11 @@ function Test-DLLExists {
         }
 
         # Debugging Log
-        Write-Host "[DEBUG] Checking DLL Path: ${DLLPath}" -ForegroundColor DarkGray
+        Write-Host "[DEBUG] Checking DLL Path: $DLLPath" -ForegroundColor DarkGray
 
         return [System.IO.File]::Exists($DLLPath)
     } catch {
-        Write-Host "[ERROR] Unable to check DLL existence: ${DLLPath} - $_" -ForegroundColor Red
+        Write-Host "[ERROR] Unable to check DLL existence: $DLLPath - $_" -ForegroundColor Red
         return $false
     }
 }
@@ -114,7 +116,7 @@ function Analyze-Process {
                 $dllPaths = Get-DLLSearchPaths -ProcessPath $processPath -DLLName $dllName
 
                 # Debugging Log: Log all generated paths
-                Write-Host "[DEBUG] DLL Search Paths for `${dllName}`:" -ForegroundColor DarkGray
+                Write-Host "[DEBUG] DLL Search Paths for $dllName:" -ForegroundColor DarkGray
                 $dllPaths | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
 
                 # Filter out empty or invalid paths before testing
@@ -123,11 +125,11 @@ function Analyze-Process {
                 # Check if the DLL exists in any search path
                 $found = $validPaths | Where-Object { Test-DLLExists $_ }
                 if (-not $found) {
-                    Write-Host "[MISSING] DLL Not Found: `${dllName}`, Affected Executable: `${processPath}`" -ForegroundColor Red
+                    Write-Host "[MISSING] DLL Not Found: $dllName, Affected Executable: $processPath" -ForegroundColor Red
                     $missingDLLs += $dllName
                 }
             } catch {
-                Write-Host "[ERROR] Error analyzing module `${module.ModuleName}`: $_" -ForegroundColor Yellow
+                Write-Host "[ERROR] Error analyzing module $($module.ModuleName): $_" -ForegroundColor Yellow
             }
         }
 
