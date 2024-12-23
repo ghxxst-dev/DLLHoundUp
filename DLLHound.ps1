@@ -1,4 +1,3 @@
-
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
@@ -10,7 +9,7 @@ Write-Host @"
 | |  | | |    | |    |  __  |/ _ \| | | | '_ \ / _  |
 | |__| | |____| |____| |  | | (_) | |_| | | | | (_| |
 |_____/|______|______|_|  |_|\___/ \__,_|_| |_|\__,_|
-                  by @ajm4n
+                  by @ajm4n - Inspired by Spartacus
 "@ -ForegroundColor Cyan
 
 # Configuration
@@ -47,10 +46,16 @@ function Get-DLLSearchPaths {
     $processDir = Split-Path -Parent $ProcessPath
 
     # 1. Application directory
-    $paths += Join-Path $processDir $DLLName
+    if (![string]::IsNullOrWhiteSpace($processDir)) {
+        $paths += Join-Path $processDir $DLLName
+    }
 
     # 2. Custom search paths
-    $CustomSearchPaths | ForEach-Object { $paths += Join-Path $_ $DLLName }
+    $CustomSearchPaths | ForEach-Object {
+        if (![string]::IsNullOrWhiteSpace($_)) {
+            $paths += Join-Path $_ $DLLName
+        }
+    }
 
     # 3. System32
     $paths += Join-Path $env:SystemRoot "System32\$DLLName"
@@ -62,7 +67,11 @@ function Get-DLLSearchPaths {
     $paths += Join-Path (Get-Location) $DLLName
 
     # 6. PATH environment variable directories
-    $paths += ($env:Path -split ';' | ForEach-Object { Join-Path $_ $DLLName })
+    $paths += ($env:Path -split ';' | ForEach-Object {
+        if (![string]::IsNullOrWhiteSpace($_)) {
+            Join-Path $_ $DLLName
+        }
+    })
 
     return $paths
 }
@@ -71,6 +80,10 @@ function Get-DLLSearchPaths {
 function Test-DLLExists {
     param ([string]$DLLPath)
     try {
+        if ([string]::IsNullOrWhiteSpace($DLLPath)) {
+            Write-Host "[ERROR] Received an empty or invalid DLL path." -ForegroundColor Yellow
+            return $false
+        }
         return [System.IO.File]::Exists($DLLPath)
     } catch {
         Write-Host "[ERROR] Unable to check DLL existence: $DLLPath - $_" -ForegroundColor Red
@@ -123,8 +136,11 @@ function Analyze-Process {
                 $dllName = $module.ModuleName
                 $dllPaths = Get-DLLSearchPaths -ProcessPath $processPath -DLLName $dllName
 
+                # Filter out empty or invalid paths before testing
+                $validPaths = $dllPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
                 # Check if the DLL exists in any search path
-                $found = $dllPaths | Where-Object { Test-DLLExists $_ }
+                $found = $validPaths | Where-Object { Test-DLLExists $_ }
                 if (-not $found) {
                     Write-Host "[MISSING] DLL Not Found: $dllName, Affected Executable: $($Process.MainModule.FileName)" -ForegroundColor Red
                     $missingDLLs += $dllName
