@@ -128,7 +128,7 @@ class DllScanner {
     }
     
     [PSCustomObject[]] AnalyzeProcess([System.Diagnostics.Process]$process) {
-        [Logger]::Info("Analyzing process: $($process.ProcessName) (PID: $($process.Id))")
+        [Logger]::Debug("Analyzing process: $($process.ProcessName) (PID: $($process.Id))", $this.Config.DebugMode)
         $results = [System.Collections.ArrayList]::new()
         
         try {
@@ -180,7 +180,7 @@ class DllScanner {
         [Logger]::Info("Starting DLL sideloading vulnerability scan...")
         
         if ($this.Config.DebugMode) {
-            [Logger]::Info("Debug Mode is ENABLED. Verbose output will be displayed.")
+            [Logger]::Debug("Debug Mode is ENABLED. Verbose output will be displayed.", $true)
         }
         
         $results = [System.Collections.ArrayList]::new()
