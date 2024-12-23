@@ -1,8 +1,8 @@
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
-# Global debug flag
-$script:ShowDebug = $false
+# Global verbose flag
+$script:VerboseOutput = $false
 
 # ASCII art title
 Write-Host @"
@@ -35,7 +35,7 @@ function Write-LogMessage {
         [ConsoleColor]$Color = "White"
     )
     
-    if ($Type -eq "DEBUG" -and -not $script:ShowDebug) {
+    if ($Type -eq "VERBOSE" -and -not $script:VerboseOutput) {
         return
     }
     
@@ -92,7 +92,7 @@ function Analyze-Process {
     param([System.Diagnostics.Process]$Process)
     
     $results = @()
-    Write-LogMessage "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -Type "DEBUG" -Color DarkGray
+    Write-LogMessage "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -Type "VERBOSE" -Color DarkGray
     
     try {
         $processPath = $Process.MainModule.FileName
@@ -103,10 +103,10 @@ function Analyze-Process {
                 $dllName = $module.ModuleName
                 $searchPaths = Get-DllSearchPaths -ProcessPath $processPath -DllName $dllName
                 
-                if ($script:ShowDebug) {
-                    Write-LogMessage "Checking paths for $dllName" -Type "DEBUG" -Color DarkGray
+                if ($script:VerboseOutput) {
+                    Write-LogMessage "Checking paths for $dllName" -Type "VERBOSE" -Color DarkGray
                     $searchPaths | ForEach-Object { 
-                        Write-LogMessage "  $_" -Type "DEBUG" -Color DarkGray 
+                        Write-LogMessage "  $_" -Type "VERBOSE" -Color DarkGray 
                     }
                 }
                 
@@ -142,12 +142,12 @@ function Analyze-Process {
 function Start-DLLScan {
     Write-LogMessage "Starting DLL sideloading vulnerability scan..." -Type "INFO" -Color Green
     
-    # Enable/Disable Debug Mode
-    $debugChoice = Read-Host "Enable debug mode? (y/n)"
-    $script:ShowDebug = $debugChoice -eq 'y'
+    # Enable/Disable Verbose Mode
+    $verboseChoice = Read-Host "Enable verbose mode? (y/n)"
+    $script:VerboseOutput = $verboseChoice -eq 'y'
     
-    if ($script:ShowDebug) {
-        Write-LogMessage "Debug mode enabled" -Type "INFO" -Color Yellow
+    if ($script:VerboseOutput) {
+        Write-LogMessage "Verbose mode enabled" -Type "INFO" -Color Yellow
     }
     
     # Get custom search paths
