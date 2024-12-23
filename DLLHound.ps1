@@ -1,10 +1,8 @@
 # Requires running with administrator privileges
 #Requires -RunAsAdministrator
 
-[CmdletBinding()]
-param (
-    [Parameter(Mandatory = $false)]
-    [switch]$DebugMode
+param(
+    [switch]$ShowDebug
 )
 
 # ASCII art title
@@ -31,42 +29,31 @@ $script:StandardWindowsProcesses = @(
 
 $script:CustomSearchPaths = @()
 
-# Logging functions
-function Write-DebugMessage {
-    param([string]$Message)
-    if ($DebugMode) {
-        Write-Host "[DEBUG] $Message" -ForegroundColor DarkGray
+function Write-LogMessage {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        [string]$Type = "INFO",
+        [ConsoleColor]$Color = "White"
+    )
+    
+    if ($Type -eq "DEBUG" -and -not $ShowDebug) {
+        return
     }
+    
+    Write-Host "[$Type] $Message" -ForegroundColor $Color
 }
 
-function Write-InfoMessage {
-    param([string]$Message)
-    Write-Host "[INFO] $Message" -ForegroundColor Green
-}
-
-function Write-ErrorMessage {
-    param([string]$Message)
-    Write-Host "[ERROR] $Message" -ForegroundColor Red
-}
-
-function Write-MissingMessage {
-    param([string]$Message)
-    Write-Host "[MISSING] $Message" -ForegroundColor Red
-}
-
-# Add custom search paths
 function Add-CustomSearchPath {
     param([string]$Path)
-    
     if (Test-Path $Path) {
         $script:CustomSearchPaths += $Path
-        Write-InfoMessage "Added custom search path: $Path"
+        Write-LogMessage "Added custom search path: $Path" -Type "INFO" -Color Green
     } else {
-        Write-ErrorMessage "Invalid path: $Path"
+        Write-LogMessage "Invalid path: $Path" -Type "ERROR" -Color Red
     }
 }
 
-# Get DLL search paths
 function Get-DllSearchPaths {
     param(
         [string]$ProcessPath,
@@ -103,12 +90,11 @@ function Get-DllSearchPaths {
     return $searchPaths
 }
 
-# Process analysis function
 function Analyze-Process {
     param([System.Diagnostics.Process]$Process)
     
     $results = @()
-    Write-DebugMessage "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))"
+    Write-LogMessage "Analyzing process: $($Process.ProcessName) (PID: $($Process.Id))" -Type "DEBUG" -Color DarkGray
     
     try {
         $processPath = $Process.MainModule.FileName
@@ -119,9 +105,11 @@ function Analyze-Process {
                 $dllName = $module.ModuleName
                 $searchPaths = Get-DllSearchPaths -ProcessPath $processPath -DllName $dllName
                 
-                if ($DebugMode) {
-                    Write-DebugMessage "Checking paths for $dllName"
-                    $searchPaths | ForEach-Object { Write-DebugMessage "  $_" }
+                if ($ShowDebug) {
+                    Write-LogMessage "Checking paths for $dllName" -Type "DEBUG" -Color DarkGray
+                    $searchPaths | ForEach-Object { 
+                        Write-LogMessage "  $_" -Type "DEBUG" -Color DarkGray 
+                    }
                 }
                 
                 $found = $false
@@ -133,7 +121,7 @@ function Analyze-Process {
                 }
                 
                 if (-not $found) {
-                    Write-MissingMessage "DLL Not Found: $dllName (Process: $($Process.ProcessName))"
+                    Write-LogMessage "DLL Not Found: $dllName (Process: $($Process.ProcessName))" -Type "MISSING" -Color Red
                     $results += [PSCustomObject]@{
                         ProcessName = $Process.ProcessName
                         ProcessId = $Process.Id
@@ -143,19 +131,18 @@ function Analyze-Process {
                     }
                 }
             } catch {
-                Write-ErrorMessage "Error analyzing module $($module.ModuleName): $($_.Exception.Message)"
+                Write-LogMessage "Error analyzing module $($module.ModuleName): $($_.Exception.Message)" -Type "ERROR" -Color Yellow
             }
         }
     } catch {
-        Write-ErrorMessage "Error accessing process $($Process.ProcessName): $($_.Exception.Message)"
+        Write-LogMessage "Error accessing process $($Process.ProcessName): $($_.Exception.Message)" -Type "ERROR" -Color Red
     }
     
     return $results
 }
 
-# Main scanning function
 function Start-DLLScan {
-    Write-InfoMessage "Starting DLL sideloading vulnerability scan..."
+    Write-LogMessage "Starting DLL sideloading vulnerability scan..." -Type "INFO" -Color Green
     
     # Get custom search paths
     Write-Host "`nEnter custom search paths (press Enter without input to continue):"
@@ -180,7 +167,7 @@ function Start-DLLScan {
     
     # Display results
     if ($results.Count -gt 0) {
-        Write-InfoMessage "Found $($results.Count) potential DLL sideloading vulnerabilities:"
+        Write-LogMessage "Found $($results.Count) potential DLL sideloading vulnerabilities:" -Type "INFO" -Color Green
         $results | Format-Table -AutoSize
         
         # Export option
@@ -189,10 +176,10 @@ function Start-DLLScan {
             $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
             $csvPath = Join-Path $env:USERPROFILE "Desktop\DLLScan_$timestamp.csv"
             $results | Export-Csv -Path $csvPath -NoTypeInformation
-            Write-InfoMessage "Results exported to: $csvPath"
+            Write-LogMessage "Results exported to: $csvPath" -Type "INFO" -Color Green
         }
     } else {
-        Write-InfoMessage "No DLL sideloading vulnerabilities detected."
+        Write-LogMessage "No DLL sideloading vulnerabilities detected." -Type "INFO" -Color Green
     }
 }
 
