@@ -180,7 +180,8 @@ function Start-DLLScan {
         $exportChoice = Read-Host "Export results to CSV? (y/n)"
         if ($exportChoice -eq 'y') {
             $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            $csvPath = Join-Path $env:USERPROFILE "Desktop\DLLScan_$timestamp.csv"
+            $desktopLocation = [Environment]::GetFolderPath("Desktop")
+            $csvPath = Join-Path $desktopLocation "\DLLScan_$timestamp.csv"
             $results | Export-Csv -Path $csvPath -NoTypeInformation
             Write-LogMessage "Results exported to: $csvPath" -Type "INFO" -Color Green
         }
