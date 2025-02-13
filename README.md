@@ -1,11 +1,11 @@
-# DLLHound
-# DLL Sideloading Scanner 🔍
+# DLLHoundUp
+# DLL Sideloading Scanner for privilege escalation 🔍
 
-A lightweight PowerShell-based scanner designed to identify missing or unresolved DLLs, helping you detect potential DLL sideloading vulnerabilities on your Windows system.
+A lightweight PowerShell-based scanner designed to identify missing or unresolved DLLs that will allow privilege escalation (for CVE hunting).
 
 ---
 
-## Features ✨
+## Features From Original Script ✨
 
 - **Dynamic Process Analysis** 🔄  
   Scans all running processes and their loaded DLLs to detect missing or unresolved libraries.
@@ -49,5 +49,4 @@ A lightweight PowerShell-based scanner designed to identify missing or unresolve
 ## Usage 🚀
 
 1. Run the script with:
-   ```powershell
-   .\DLLHound.ps1```
+powershell -RunAsAdministrator .\DLLHoundUp.ps1
