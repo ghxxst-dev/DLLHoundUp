@@ -232,7 +232,7 @@ function Start-DLLScan {
     }
     
     if ($results.Count -gt 0) {
-        Write-LogMessage "Found $($results.Count) potential DLL sideloading vulnerabilities:" -Type "INFO" -Color Green
+        Write-LogMessage "Found $($results.Count) potential DLL sideloading privesc vulnerabilities:" -Type "INFO" -Color Green
         $results | Select-Object MissingDLL, ProcessPath | Format-Table -AutoSize -Wrap
         
         $exportChoice = Read-Host "Export results to CSV? (y/n)"
@@ -244,7 +244,7 @@ function Start-DLLScan {
             Write-LogMessage "Results exported to: $csvPath" -Type "INFO" -Color Green
         }
     } else {
-        Write-LogMessage "No DLL sideloading vulnerabilities detected (under current definitions)." -Type "INFO" -Color Green
+        Write-LogMessage "No DLL sideloading vulnerabilities that allow privilege escalation detected (under current definitions)." -Type "INFO" -Color Green
     }
 }
 
